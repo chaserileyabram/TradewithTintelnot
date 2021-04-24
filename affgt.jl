@@ -45,7 +45,6 @@ using ForwardDiff
     # Adrow = 0.2821
     # # Productivity, input, RoW relative to US
     # Aurow = 0.1114
-
     # A = [1.0 1.0; 0.2821 0.1114]
     A = [1.0 1.0; 1.0 1.0]
 
@@ -60,62 +59,24 @@ using ForwardDiff
     t = zeros(2,2,2)
 end
 
-# Now idea is to solve nonlinear system
-
-# p[i,j,s] -> from i to j in sector s
-# t[i,j,s] -> tariff on import from i to j in sector s (imposed by j)
-# q[i,j,s] -> same
-# M[i,s] -> country i, sector s
-
-
-# # Map index to single array (not used)
-# function ijs_index(i,j,s)
-#     return 4*(s-1) + 2(j-1) + i
-# end
-
-# # Map array back to indices (not used)
-# function ijs_index_inv(k)
-#     return [1 + ((k % 2) == 0), 1 + ((k % 4) in [0,3]), 1 + ((k % 8) in [0,5,6,7])]
-# end
-
-function no_neg(x)
-    println("no_neg called")
-    return x .* (x .>= 0) #+ 0.01 .* (x .<= 0)
-end
-
-# function penalty_neg(x)
-#     return Inf*sum(x)
-# end
-
 # Aggregate P_j^s
 function Pjs(p,M,m,j,s)
-    # p = no_neg(p)
-    # M = no_neg(M)
     return (sum(M[:,s] .* (p[:,j,s] .* (1 .+ m.t[:,j,s])).^(1-m.ces[s])))^(1/(1-m.ces[s]))
 end
 
 # Aggregate Q_j^u (and also Q_j^d == U_j)
 function Qjs(q,M,m,j,s)
-    # q = no_neg(q)
-    # M = no_neg(M)
     return (sum(M[:,s] .* (q[:,j,s]).^((m.ces[s]-1)/m.ces[s])))^(m.ces[s]/(m.ces[s]-1))
 end
 
 # Tariff rebate
 function Rj(p,q,m,M,j)
-    # p = no_neg(p)
-    # q = no_neg(q)
-    # M = no_neg(M)
     return m.t[3 - j,j,1]*M[3 - j,1]*p[3-j,j,1]*q[3-j,j,1] + m.t[3-j,j,2]*M[3-j,2]*M[j,1]*p[3-j,j,2]*q[3-j,j,2]
 end
 
 # kappa objects
 # These help with algebra and simplifying the code
 function kappa(p,w,q,M,m,j,s)
-    # p = no_neg(p)
-    # w = no_neg(w)
-    # q = no_neg(q)
-    # M = no_neg(M)
     if s == 1
         return ((w[j]*m.L[j] + Rj(p,q,m,M,j))/Pjs(p,M,m,j,1))^(1/m.ces[1])*Pjs(p,M,m,j,1)
     elseif s == 2
@@ -127,16 +88,11 @@ end
 
 # Residuals from HH demand (4)
 function hhd_residual(p,w,M,q,m,i,j)
-    # p = no_neg(p)
-    # w = no_neg(w)
-    # M = no_neg(M)
-    # q = no_neg(q)
     return kappa(p,w,q,M,m,j,1)*q[i,j,1]^(-1/m.ces[1]) - (1 + m.t[i,j,1])*p[i,j,1]
 end
 
 function demand_residual(p,w,M,q,m,i,j,s)
     if s == 1
-        # return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*(w[j]*m.L[j] + Rj(p,q,m,M,j))/Pjs(p,M,m,j,s)
         return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*Qjs(q,M,m,j,s)
     elseif s == 2
         return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*Qjs(q,M,m,j,s)
@@ -147,52 +103,30 @@ end
 
 # Residuals from d output (4)
 function dout_residual(p,w,M,q,m,i,j)
-    # p = no_neg(p)
-    # w = no_neg(w)
-    # M = no_neg(M)
-    # q = no_neg(q)
     return kappa(p,w,q,M,m,j,1)*(1 - 1/m.ces[1])*q[i,j,1]^(-1/m.ces[1]) - kappa(p,w,q,M,m,i,2)*Qjs(q,M,m,i,2)^(1-1/m.ces[2])/((1-m.alpha)*(sum(q[i,:,1]) + m.f[i,1]))
 end
 
 # Residuals from d input (4) (need to fix and include taxes and iceberg)
 function din_residual(p,w,M,q,m,i,j)
-    # p = no_neg(p)
-    # w = no_neg(w)
-    # M = no_neg(M)
-    # q = no_neg(q)
     return kappa(p,w,q,M,m,j,2)*q[i,j,2]^(-1/m.ces[2]) - (1 + m.t[i,j,2])*p[i,j,2]
 end
 
 # Residuals from u output
 function uout_residual(p,w,M,q,m,i,j)
-    # p = no_neg(p)
-    # w = no_neg(w)
-    # M = no_neg(M)
-    # q = no_neg(q)
     return kappa(p,w,q,M,m,j,2)*(1 - 1/m.ces[2])*q[i,j,2]^(-1/m.ces[2]) - w[i]/m.A[i,2]
 end
 
 # Residuals from zero profits d
 function dzp_residual(q,m,j)
-    # p = no_neg(p)
-    # w = no_neg(w)
-    # M = no_neg(M)
-    # q = no_neg(q)
-    # return sum(p[j,:,1] .* q[j,:,1]) - w[j]*(sum(q[j,:,1]) + m.f[j,1])^(1/m.alpha)*m.A[j,1]^(-1/m.alpha)*Qjs(q,M,m,j,2)^(1-1/m.alpha) - Pjs(p,M,m,j,2)*Qjs(q,M,m,j,2)
     return sum(q[j,:,1]) - (m.ces[1] - 1)*m.f[j,1]
 end
 
 # Residuals from zero profits u
 function uzp_residual(M,q,m,j)
-    # return sum(p[j,:,2] .* q[j,:,2]) - w[j]/m.A[j,2]*(sum(q[j,:,2]) + m.f[j,2])
     return sum(q[j,:,2] .* M[:,1]) - (m.ces[2] - 1)*m.f[j,2]
 end
 
 function labor_residual(p,w,M,q,m,j)
-    # p = no_neg(p)
-    # w = no_neg(w)
-    # M = no_neg(M)
-    # q = no_neg(q)
     return m.L[j] - M[j,1]*((sum(q[j,:,1]) + m.f[j,1])/(m.A[j,1]*Qjs(q,M,m,j,2)^(1-m.alpha)))^(1/m.alpha) - M[j,2]*(sum(M[:,1] .* q[j,:,2]) + m.f[j,2])/m.A[j,2]
 end
 
@@ -201,10 +135,15 @@ end
 function all_residuals!(F,x,m)
     
     # Rename variables
-    p = reshape(exp.(x[1:8]), (2,2,2))
-    w = exp.(x[9:10])
-    M = reshape(exp.(x[11:14]), (2,2))
-    q = reshape(exp.(x[15:22]), (2,2,2))
+    p = reshape(x[1:8], (2,2,2))
+    w = x[9:10]
+    M = reshape(x[11:14], (2,2))
+    q = reshape(x[15:22], (2,2,2))
+
+    p = exp.(p)
+    w = exp.(w)
+    M = exp.(M)
+    q = exp.(q)
 
     # Residual counter
     F_iter = 0
@@ -268,87 +207,32 @@ function all_residuals!(F,x,m)
     end
 end
 
-
-# p0 = ones(2,2,2)
-# # # p0[1,1,1] = 2
-# # # p0[2,1,1] = 2
-# q0 = ones(2,2,2)
-# M0 = ones(2,2)
-# # # t0 = zeros(2,2,2)
-# # # t0[2,1,1] = 0.5
-# # # t0[2,1,2] = 0.05
-# w0 = [1, 1]
-# # L0 = [1, 1]
-
-# # # forgot the taxes here
-# # for i in 1:2
-# #     for j in 1:2
-# #         println("i = ", i, ", j = ", j)
-# #         println("    p0[i,j]: ", p0[i,j])
-# #         println("    Pjs(i,j): ", Pjs(p0,M0,t0,i,j))
-# #         println("    normalized: ", p0[i,j]/Pjs(p0,M0,t0,i,j))
-# #     end
-# # end
-
-# # for i in 1:2
-# #     for j in 1:2
-# #         for s in 1:2
-# #             # println("kappa(",j,",",s,"): ", kappa(p0,w0,q0,M0,m0,j,s))
-# #             # println("hhd_residual(",i,",",j,",",s,"): ", hhd_residual(p0,w0,M0,q0,m0,i,j))
-# #             # println("dout_resid(",i,",",j,",",s,"): ", dout_residual(p0,w0,M0,q0,m0,i,j))
-# #             # println("din_resid(",i,",",j,",",s,"): ", din_residual(p0,w0,M0,q0,m0,i,j))
-# #             # println("uout_resid(",i,",",j,",",s,"): ", uout_residual(p0,w0,M0,q0,m0,i,j))
-# #             # println("dzp_residuals(",j,"): ", dzp_residuals(p0,w0, M0, q0, m0, j))
-# #             # println("uzp_residuals(",j,"): ", uzp_residuals(p0,w0, M0, q0, m0, j))
-# #             # println("labor_residuals(",j,"): ", labor_residuals(p0,w0, M0, q0, m0, j))
-# #         end
-# #     end
-# # end
-
-# # function f!(F,x)
-# #     F[1] = x[1] - 5.0
-# #     F[2] = x[2] - 6.0
-# #     F[3] = x[3] - 1.0
-# #     F[4] = x[4] - 3.0
-# # end
-
-# # nlsolve(f!, [-100.0 -100.0 100.0 100.0])
-
-# # function g!(F,x)
-# #     F[1,1] = x[1,1] - 5.0
-# #     F[2,1] = x[2,1] - 6.0
-# #     F[1,2] = x[1,2] - 1.0
-# #     F[2,2] = x[2,2] - 3.0
-# # end
-
-# # nlsolve(g!, [-100.0 -100.0; 100.0 100.0])
-
-# # Initialize residuals and guess
-# m0 = OpenAFFGTModel()
-# # p0 = ones(2,2,2)
-# # q0 = ones(2,2,2)
-# # M0 = ones(2,2)
-# # w0 = [1, 1]
-
-m0 = OpenAFFGTModel()
+m0 = OpenAFFGTModel(L = [0.2, 0.1])
 F0 = zeros(22)
-# x0 = ones(22) #.+ 0.0im
-# # x0[11:14] *= 0.1
-x0 = zeros(22) .- 1.0
+x0 = zeros(22)
 
 function solve_open(m, x_init)
     return nlsolve((F,x) -> all_residuals!(F,x,m), x_init, #autodiff = :forward,
-    show_trace = true, method = :newton, iterations = 1000)
+    show_trace = true, method = :trust_region, iterations = 1000)
 end
 
 # Solve system
 soln = solve_open(m0, x0)
+p_soln = reshape(soln.zero[1:8], (2,2,2))
+w_soln = soln.zero[9:10]
+M_soln = reshape(soln.zero[11:14], (2,2))
+q_soln = reshape(soln.zero[15:22], (2,2,2))
+
+p_soln = exp.(p_soln)
+w_soln = exp.(w_soln)
+M_soln = exp.(M_soln)
+q_soln = exp.(q_soln)
 
 println("soln")
-println("    p: ", reshape(exp.(soln.zero[1:8]), (2,2,2)))
-println("    w: ", exp.(soln.zero[9:10]))
-println("    M: ", reshape(exp.(soln.zero[11:14]), (2,2)))
-println("    q: ", reshape(exp.(soln.zero[15:22]), (2,2,2)))
+println("    p: ", p_soln)
+println("    w: ", w_soln)
+println("    M: ", M_soln)
+println("    q: ", q_soln)
 
 
 
