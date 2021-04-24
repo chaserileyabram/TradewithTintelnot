@@ -61,18 +61,32 @@ using Random
     t = zeros(2,2,2)
 end
 
-# Aggregate P_j^s
-function Pjs(p,M,m,j,s)
-    if isnan((sum(M[:,s] .* (p[:,j,s] .* (1 .+ m.t[:,j,s])).^(1-m.ces[s])))^(1/(1-m.ces[s])))
-        println("NaN in Pjs")
-    end
+# # Aggregate P_j^s
+# function Pjs(p,M,m,j,s)
+#     return sum(M[:,s] .* (p[:,j,s] .* (1 .+ m.t[:,j,s]).^(1-m.ces[s])))^(1/(1-m.ces[s]))
+# end
 
-    return sum(M[:,s] .* (p[:,j,s] .* (1 .+ m.t[:,j,s]).^(1-m.ces[s])))^(1/(1-m.ces[s]))
+# Aggregate P_ji^s
+function Pijs(p,M,m,i,j,s)
+    return (M[i,s] * (p[i,j,s] * (1 + m.t[i,j,s]))^(1-m.ces[s]))^(1/(1-m.ces[s]))
 end
 
+function Pjs(p,M,m,j,s)
+    return sum([Pijs(p,M,m,i,j,s).^(1-m.ces[s]) for i in 1:2])^(1/(1-m.ces[s]))
+end
+
+# # Aggregate Q_j^u (and also Q_j^d == U_j)
+# function Qjs(q,M,m,j,s)
+#     return sum(M[:,s] .* (q[:,j,s]).^((m.ces[s]-1)/m.ces[s]))^(m.ces[s]/(m.ces[s]-1))
+# end
+
 # Aggregate Q_j^u (and also Q_j^d == U_j)
+function Qijs(q,M,m,i,j,s)
+    return (M[i,s] * (q[i,j,s])^((m.ces[s]-1)/m.ces[s]))^(m.ces[s]/(m.ces[s]-1))
+end
+
 function Qjs(q,M,m,j,s)
-    return sum(M[:,s] .* (q[:,j,s]).^((m.ces[s]-1)/m.ces[s]))^(m.ces[s]/(m.ces[s]-1))
+    return sum([Qijs(q,M,m,i,j,s)^((m.ces[s]-1)/m.ces[s]) for i in 1:2])^(m.ces[s]/(m.ces[s]-1))
 end
 
 # Tariff rebate
@@ -93,16 +107,16 @@ function kappa(p,w,q,M,m,j,s)
 end
 
 # Residuals from HH demand (4)
-function hhd_residual(p,w,M,q,m,i,j)
-    return kappa(p,w,q,M,m,j,1)*q[i,j,1]^(-1/m.ces[1]) - (1 + m.t[i,j,1])*p[i,j,1]
-end
+# function hhd_residual(p,w,M,q,m,i,j)
+#     return kappa(p,w,q,M,m,j,1)*q[i,j,1]^(-1/m.ces[1]) - (1 + m.t[i,j,1])*p[i,j,1]
+# end
 
 function demand_residual(p,w,M,q,m,i,j,s)
     if s == 1
         # return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*Qjs(q,M,m,j,s)
         return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*(w[j]*m.L[j] + Rj(p,q,m,M,j))/Pjs(p,M,m,j,s)
     elseif s == 2
-        return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*Qjs(q,M,m,j,s)
+        return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pijs(p,M,m,i,j,s))^(-m.ces[s])*Qijs(q,M,m,i,j,s)
     else
         println("Invalid sector in demand_residual")
     end
@@ -114,9 +128,9 @@ function dout_residual(p,w,M,q,m,i,j)
 end
 
 # Residuals from d input (4) (need to fix and include taxes and iceberg)
-function din_residual(p,w,M,q,m,i,j)
-    return kappa(p,w,q,M,m,j,2)*q[i,j,2]^(-1/m.ces[2]) - (1 + m.t[i,j,2])*p[i,j,2]
-end
+# function din_residual(p,w,M,q,m,i,j)
+#     return kappa(p,w,q,M,m,j,2)*q[i,j,2]^(-1/m.ces[2]) - (1 + m.t[i,j,2])*p[i,j,2]
+# end
 
 # Residuals from u output
 function uout_residual(p,w,M,q,m,i,j)
@@ -298,13 +312,13 @@ function solve_q(m, x_init, p, w, M)
     show_trace = true, method = :trust_region, iterations = 1000)
 end
 
-m0 = OpenAFFGTModel()
+m0 = OpenAFFGTModel(ces = [1.01, 2.0])
 # x0 = zeros(2,2,2)
 # x0 *= 2
 p0 = ones(2,2,2)
-# p0[1,1,1] = 1.0
-# p0 *= 5.0
-q0 = log.(ones(2,2,2)*10)
+p0[1,1,1] = 1.0
+# p0 *= 2.0
+q0 = log.(ones(2,2,2))
 M0 = ones(2,2)
 # M0[1,1,1] = 20.0
 w0 = [1.0, 1.0]
@@ -315,7 +329,7 @@ q1 = reshape(q_soln.zero[1:8], (2,2,2))
 q1 = exp.(q1)
 println("q soln")
 println("    p: ", p0)
-# println("    w: ", w0)
+println("    w: ", w0)
 println("    M: ", M0)
 println("    q: ", q1)
 
@@ -381,18 +395,18 @@ end
 
 function solve_qM(m, x_init, p, w)
     return nlsolve((F,x) -> qM_residuals!(F,x,p,w,m), x_init,
-    show_trace = true, method = :newton, iterations = 100)
+    show_trace = true, method = :trust_region, iterations = 100, ftol = 1e-14)
 end
 
 m0 = OpenAFFGTModel()
 println(m0)
 p0 = ones(2,2,2)
 # p0 = rand(2,2,2)
-# p0[1,1,1] = 1.1
+p0[1,1,1] = 1.1
 w0 = ones(2)
 # w0 = rand(2)
-# x0 = zeros(12)
-x0 = randn(12)
+x0 = zeros(12)
+# x0 = randn(12)
 # x0 = ones(12)
 # x0 *= 0.001
 qM_soln = solve_qM(m0, x0, p0, w0)
@@ -400,11 +414,11 @@ qM_soln = solve_qM(m0, x0, p0, w0)
 q1 = reshape(qM_soln.zero[1:8], (2,2,2))
 M1 = reshape(qM_soln.zero[9:12], (2,2))
 
-# q1 = exp.(q1)
-# M1 = exp.(M1)
+q1 = exp.(q1)
+M1 = exp.(M1)
 
-q1 = exp.(q1) #./(1 .+ exp.(q1))*5
-M1 = exp.(M1) #./(1 .+ exp.(M1))*5
+# q1 = exp.(q1) #./(1 .+ exp.(q1))*5
+# M1 = exp.(M1) #./(1 .+ exp.(M1))*5
 println("qM soln")
 println("    p: ", p0)
 println("    w: ", w0)
