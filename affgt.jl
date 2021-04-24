@@ -17,6 +17,8 @@ using NLsolve
 using Parameters
 # Not currently used
 using ForwardDiff
+using Optim
+using Random
 
 ##
 
@@ -61,12 +63,16 @@ end
 
 # Aggregate P_j^s
 function Pjs(p,M,m,j,s)
-    return (sum(M[:,s] .* (p[:,j,s] .* (1 .+ m.t[:,j,s])).^(1-m.ces[s])))^(1/(1-m.ces[s]))
+    if isnan((sum(M[:,s] .* (p[:,j,s] .* (1 .+ m.t[:,j,s])).^(1-m.ces[s])))^(1/(1-m.ces[s])))
+        println("NaN in Pjs")
+    end
+
+    return sum(M[:,s] .* (p[:,j,s] .* (1 .+ m.t[:,j,s]).^(1-m.ces[s])))^(1/(1-m.ces[s]))
 end
 
 # Aggregate Q_j^u (and also Q_j^d == U_j)
 function Qjs(q,M,m,j,s)
-    return (sum(M[:,s] .* (q[:,j,s]).^((m.ces[s]-1)/m.ces[s])))^(m.ces[s]/(m.ces[s]-1))
+    return sum(M[:,s] .* (q[:,j,s]).^((m.ces[s]-1)/m.ces[s]))^(m.ces[s]/(m.ces[s]-1))
 end
 
 # Tariff rebate
@@ -93,7 +99,8 @@ end
 
 function demand_residual(p,w,M,q,m,i,j,s)
     if s == 1
-        return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*Qjs(q,M,m,j,s)
+        # return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*Qjs(q,M,m,j,s)
+        return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*(w[j]*m.L[j] + Rj(p,q,m,M,j))/Pjs(p,M,m,j,s)
     elseif s == 2
         return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*Qjs(q,M,m,j,s)
     else
@@ -130,6 +137,10 @@ function labor_residual(p,w,M,q,m,j)
     return m.L[j] - M[j,1]*((sum(q[j,:,1]) + m.f[j,1])/(m.A[j,1]*Qjs(q,M,m,j,2)^(1-m.alpha)))^(1/m.alpha) - M[j,2]*(sum(M[:,1] .* q[j,:,2]) + m.f[j,2])/m.A[j,2]
 end
 
+function d_foncs(p,w,M,q,m,i,j,k)
+    return p[k,i,2]*(m.ces[1]/(m.ces[1]-1))*q[i,j,1]^(1/m.ces[1]) - kappa(p,w,q,M,m,j,1)*(1-m.alpha)*(sum(q[i,:,1]) + m.f[i,1])*Qjs(q,M,m,i,2)^(1/m.ces[2] - 1)*q[k,i,2]^(-1/m.ces[2])
+end
+
 ##
 
 function all_residuals!(F,x,m)
@@ -164,19 +175,28 @@ function all_residuals!(F,x,m)
     end
 
     # d output
-    for i in 1:2
-        for j in 1:2
-            F_iter += 1
-            F[F_iter] = dout_residual(p,w,M,q,m,i,j)
-        end
-    end
+    # for i in 1:2
+    #     for j in 1:2
+    #         F_iter += 1
+    #         F[F_iter] = dout_residual(p,w,M,q,m,i,j)
+    #     end
+    # end
 
     # d input
+    # for i in 1:2
+    #     for j in 1:2
+    #         F_iter += 1
+    #         # F[F_iter] = din_residual(p,w,M,q,m,i,j)
+    #         F[F_iter] = demand_residual(p,w,M,q,m,i,j,2)
+    #     end
+    # end
+
     for i in 1:2
         for j in 1:2
-            F_iter += 1
-            # F[F_iter] = din_residual(p,w,M,q,m,i,j)
-            F[F_iter] = demand_residual(p,w,M,q,m,i,j,2)
+            for k in 1:2
+                F_iter += 1
+                F[F_iter] = d_foncs(p,w,M,q,m,i,j,k)
+            end
         end
     end
 
@@ -205,16 +225,19 @@ function all_residuals!(F,x,m)
         F_iter += 1
         F[F_iter] = labor_residual(p,w,M,q,m,j)
     end
+
+    # return maximum(abs.(F))
 end
 
-m0 = OpenAFFGTModel(L = [0.2, 0.1])
+m0 = OpenAFFGTModel()
 F0 = zeros(22)
-x0 = zeros(22)
+x0 = zeros(22) #.+ 0.0im
 
 function solve_open(m, x_init)
     return nlsolve((F,x) -> all_residuals!(F,x,m), x_init, #autodiff = :forward,
-    show_trace = true, method = :trust_region, iterations = 1000)
+    show_trace = true, method = :newton, iterations = 1000)
 end
+
 
 # Solve system
 soln = solve_open(m0, x0)
@@ -234,7 +257,9 @@ println("    w: ", w_soln)
 println("    M: ", M_soln)
 println("    q: ", q_soln)
 
+# temp_all(z) = all_residuals!(F0,z,m0)
 
+# optimize(temp_all, x0, LBFGS(), Optim.Options(show_trace = true))
 
 ##
 
@@ -312,15 +337,15 @@ end
 
 # Need to solve small CES system
 # Take prices/wages as given (10), solve for quantities and masses (12)
-function qM_residuals!(F,x,p,m)
+function qM_residuals!(F,x,p,w,m)
     
     # Rename variables
     q = reshape(x[1:8], (2,2,2))
     M = reshape(x[9:12], (2,2))
     
     # Guarantee positive
-    q = exp.(q) ./(1 .+ exp.(q))*5
-    M = exp.(M) ./(1 .+ exp.(M))*5
+    q = exp.(q) #./(1 .+ exp.(q))*5
+    M = exp.(M) #./(1 .+ exp.(M))*5
 
     # Residual counter
     F_iter = 0
@@ -329,7 +354,7 @@ function qM_residuals!(F,x,p,m)
     for i in 1:2
         for j in 1:2
             F_iter += 1
-            F[F_iter] = demand_residual(p,M,q,m,i,j,1)
+            F[F_iter] = demand_residual(p,w,M,q,m,i,j,1)
         end
     end
 
@@ -337,7 +362,7 @@ function qM_residuals!(F,x,p,m)
     for i in 1:2
         for j in 1:2
             F_iter += 1
-            F[F_iter] = demand_residual(p,M,q,m,i,j,2)
+            F[F_iter] = demand_residual(p,w,M,q,m,i,j,2)
         end
     end
 
@@ -354,19 +379,23 @@ function qM_residuals!(F,x,p,m)
     end
 end
 
-function solve_qM(m, x_init, p)
-    return nlsolve((F,x) -> qM_residuals!(F,x,p,m), x_init,
+function solve_qM(m, x_init, p, w)
+    return nlsolve((F,x) -> qM_residuals!(F,x,p,w,m), x_init,
     show_trace = true, method = :newton, iterations = 100)
 end
 
 m0 = OpenAFFGTModel()
 println(m0)
 p0 = ones(2,2,2)
-p0[1,1,1] = 1.1
-x0 = zeros(12)
+# p0 = rand(2,2,2)
+# p0[1,1,1] = 1.1
+w0 = ones(2)
+# w0 = rand(2)
+# x0 = zeros(12)
+x0 = randn(12)
 # x0 = ones(12)
 # x0 *= 0.001
-qM_soln = solve_qM(m0, x0, p0)
+qM_soln = solve_qM(m0, x0, p0, w0)
 
 q1 = reshape(qM_soln.zero[1:8], (2,2,2))
 M1 = reshape(qM_soln.zero[9:12], (2,2))
@@ -374,18 +403,19 @@ M1 = reshape(qM_soln.zero[9:12], (2,2))
 # q1 = exp.(q1)
 # M1 = exp.(M1)
 
-q1 = exp.(q1) ./(1 .+ exp.(q1))*5
-M1 = exp.(M1) ./(1 .+ exp.(M1))*5
+q1 = exp.(q1) #./(1 .+ exp.(q1))*5
+M1 = exp.(M1) #./(1 .+ exp.(M1))*5
 println("qM soln")
 println("    p: ", p0)
+println("    w: ", w0)
 println("    M: ", M1)
 println("    q: ", q1)
 
 println("qM residuals")
 for i in 1:2
     for j in 1:2
-        println("    dem 1 (",i,",",j,"): ", demand_residual(p0,M1,q1,m0,i,j,1))
-        println("    dem 2 (",i,",",j,"): ", demand_residual(p0,M1,q1,m0,i,j,2))
+        println("    dem 1 (",i,",",j,"): ", demand_residual(p0,w0,M1,q1,m0,i,j,1))
+        println("    dem 2 (",i,",",j,"): ", demand_residual(p0,w0,M1,q1,m0,i,j,2))
     end
 end
 
