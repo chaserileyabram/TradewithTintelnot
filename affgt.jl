@@ -68,11 +68,11 @@ end
 
 # Aggregate P_ji^s
 function Pijs(p,M,m,i,j,s)
-    return (M[i,s] * (p[i,j,s] * (1 + m.t[i,j,s]))^(1-m.ces[s]))^(1/(1-m.ces[s]))
+    return M[i,s]^(1/(1-m.ces[s])) * (p[i,j,s] * (1 + m.t[i,j,s]))
 end
 
 function Pjs(p,M,m,j,s)
-    return sum([Pijs(p,M,m,i,j,s).^(1-m.ces[s]) for i in 1:2])^(1/(1-m.ces[s]))
+    return sum([Pijs(p,M,m,i,j,s)^(1-m.ces[s]) for i in 1:2])^(1/(1-m.ces[s]))
 end
 
 # # Aggregate Q_j^u (and also Q_j^d == U_j)
@@ -82,7 +82,7 @@ end
 
 # Aggregate Q_j^u (and also Q_j^d == U_j)
 function Qijs(q,M,m,i,j,s)
-    return (M[i,s] * (q[i,j,s])^((m.ces[s]-1)/m.ces[s]))^(m.ces[s]/(m.ces[s]-1))
+    return M[i,s]^(m.ces[s]/(m.ces[s]-1)) * q[i,j,s]
 end
 
 function Qjs(q,M,m,j,s)
@@ -91,7 +91,7 @@ end
 
 # Tariff rebate
 function Rj(p,q,m,M,j)
-    return m.t[3 - j,j,1]*M[3 - j,1]*p[3-j,j,1]*q[3-j,j,1] + m.t[3-j,j,2]*M[3-j,2]*M[j,1]*p[3-j,j,2]*q[3-j,j,2]
+    return sum(m.t[:,j,1].*M[:,1].*p[:,j,1].*q[:,j,1] .+ m.t[:,j,2].*M[:,2].*M[j,1].*p[:,j,2].*q[:,j,2])
 end
 
 # kappa objects
@@ -156,6 +156,7 @@ function d_foncs(p,w,M,q,m,i,j,k)
 end
 
 ##
+# Full system
 
 function all_residuals!(F,x,m)
     
@@ -189,30 +190,30 @@ function all_residuals!(F,x,m)
     end
 
     # d output
-    # for i in 1:2
-    #     for j in 1:2
-    #         F_iter += 1
-    #         F[F_iter] = dout_residual(p,w,M,q,m,i,j)
-    #     end
-    # end
-
-    # d input
-    # for i in 1:2
-    #     for j in 1:2
-    #         F_iter += 1
-    #         # F[F_iter] = din_residual(p,w,M,q,m,i,j)
-    #         F[F_iter] = demand_residual(p,w,M,q,m,i,j,2)
-    #     end
-    # end
-
     for i in 1:2
         for j in 1:2
-            for k in 1:2
-                F_iter += 1
-                F[F_iter] = d_foncs(p,w,M,q,m,i,j,k)
-            end
+            F_iter += 1
+            F[F_iter] = dout_residual(p,w,M,q,m,i,j)
         end
     end
+
+    # d input
+    for i in 1:2
+        for j in 1:2
+            F_iter += 1
+            # F[F_iter] = din_residual(p,w,M,q,m,i,j)
+            F[F_iter] = demand_residual(p,w,M,q,m,i,j,2)
+        end
+    end
+
+    # for i in 1:2
+    #     for j in 1:2
+    #         for k in 1:2
+    #             F_iter += 1
+    #             F[F_iter] = d_foncs(p,w,M,q,m,i,j,k)
+    #         end
+    #     end
+    # end
 
     # u output
     for i in 1:2
@@ -249,7 +250,7 @@ x0 = zeros(22) #.+ 0.0im
 
 function solve_open(m, x_init)
     return nlsolve((F,x) -> all_residuals!(F,x,m), x_init, #autodiff = :forward,
-    show_trace = true, method = :newton, iterations = 1000)
+    show_trace = true, method = :newton, iterations = 1000, ftol=1e-16)
 end
 
 
@@ -300,7 +301,7 @@ function q_residuals!(F,x,p,w,M,m)
 
     # d input
     for i in 1:2
-        for j in 1:2
+        for j in 2:2
             F_iter += 1
             F[F_iter] = demand_residual(p,w,M,q,m,i,j,2)
         end
@@ -309,14 +310,14 @@ end
 
 function solve_q(m, x_init, p, w, M)
     return nlsolve((F,x) -> q_residuals!(F,x,p,w,M,m), x_init,
-    show_trace = true, method = :trust_region, iterations = 1000)
+    show_trace = true, method = :newton, iterations = 1000)
 end
 
 m0 = OpenAFFGTModel(ces = [1.01, 2.0])
 # x0 = zeros(2,2,2)
 # x0 *= 2
 p0 = ones(2,2,2)
-p0[1,1,1] = 1.0
+# p0[1,1,1] = 1.0
 # p0 *= 2.0
 q0 = log.(ones(2,2,2))
 M0 = ones(2,2)
@@ -391,18 +392,26 @@ function qM_residuals!(F,x,p,w,m)
         F_iter += 1
         F[F_iter] = uzp_residual(M,q,m,j)
     end
+
+
+    # for i in 1:2
+    #     for j in 1:2
+    #         F_iter += 1
+    #         F[F_iter] = dout_residual(p,w,M,q,m,i,j)
+    #     end
+    # end
 end
 
 function solve_qM(m, x_init, p, w)
     return nlsolve((F,x) -> qM_residuals!(F,x,p,w,m), x_init,
-    show_trace = true, method = :trust_region, iterations = 100, ftol = 1e-14)
+    show_trace = true, method = :trust_region, iterations = 100, ftol = 1e-15)
 end
 
 m0 = OpenAFFGTModel()
 println(m0)
 p0 = ones(2,2,2)
 # p0 = rand(2,2,2)
-p0[1,1,1] = 1.1
+# p0[1,1,1] = 1.1
 w0 = ones(2)
 # w0 = rand(2)
 x0 = zeros(12)
@@ -440,7 +449,6 @@ end
 
 
 ##
-
 
 function baby!(F,x,p)
     F_iter = 0
