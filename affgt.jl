@@ -114,9 +114,9 @@ end
 function demand_residual(p,w,M,q,m,i,j,s)
     if s == 1
         # return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*Qjs(q,M,m,j,s)
-        return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pjs(p,M,m,j,s))^(-m.ces[s])*(w[j]*m.L[j] + Rj(p,q,m,M,j))/Pjs(p,M,m,j,s)
+        return q[i,j,s]*Pjs(p,M,m,j,s)^(1-m.ces[s]) - ((1 + m.t[i,j,s])*p[i,j,s])^(-m.ces[s])*(w[j]*m.L[j] + Rj(p,q,m,M,j))
     elseif s == 2
-        return q[i,j,s] - ((1 + m.t[i,j,s])*p[i,j,s]/Pijs(p,M,m,i,j,s))^(-m.ces[s])*Qijs(q,M,m,i,j,s)
+        return q[i,j,s]*Pijs(p,M,m,i,j,s)^(-m.ces[s]) - ((1 + m.t[i,j,s])*p[i,j,s])^(-m.ces[s])*Qijs(q,M,m,i,j,s)
     else
         println("Invalid sector in demand_residual")
     end
@@ -124,7 +124,8 @@ end
 
 # Residuals from d output (4)
 function dout_residual(p,w,M,q,m,i,j)
-    return kappa(p,w,q,M,m,j,1)*(1 - 1/m.ces[1])*q[i,j,1]^(-1/m.ces[1]) - kappa(p,w,q,M,m,i,2)*Qjs(q,M,m,i,2)^(1-1/m.ces[2])/((1-m.alpha)*(sum(q[i,:,1]) + m.f[i,1]))
+    # return kappa(p,w,q,M,m,j,1)*(1 - 1/m.ces[1])*q[i,j,1]^(-1/m.ces[1]) - kappa(p,w,q,M,m,i,2)*Qjs(q,M,m,i,2)^(1-1/m.ces[2])/((1-m.alpha)*(sum(q[i,:,1]) + m.f[i,1]))
+    return p[i,j,2] - (sum(q[j,:,1]) + m.f[j,1])*Qjs(q,M,m,j,2)^(1/m.ces[2] - 1)*q[i,j,2]^(-1/m.ces[2])*(1-m.alpha)
 end
 
 # Residuals from d input (4) (need to fix and include taxes and iceberg)
@@ -240,8 +241,6 @@ function all_residuals!(F,x,m)
         F_iter += 1
         F[F_iter] = labor_residual(p,w,M,q,m,j)
     end
-
-    # return maximum(abs.(F))
 end
 
 m0 = OpenAFFGTModel()
@@ -272,13 +271,39 @@ println("    w: ", w_soln)
 println("    M: ", M_soln)
 println("    q: ", q_soln)
 
-# temp_all(z) = all_residuals!(F0,z,m0)
+println("full residuals")
+for i in 1:2
+    for j in 1:2
+        println("    dem 1 (",i,",",j,"): ", demand_residual(p_soln,w_soln,M_soln,q_soln,m0,i,j,1))
+        println("    dem 2 (",i,",",j,"): ", demand_residual(p_soln,w_soln,M_soln,q_soln,m0,i,j,2))
+    end
+end
 
-# optimize(temp_all, x0, LBFGS(), Optim.Options(show_trace = true))
+for i in 1:2
+    for j in 1:2
+        println("    dout (",i,",",j,"): ", dout_residual(p_soln, w_soln,M_soln,q_soln,m0,i,j))
+    end
+end
+
+for i in 1:2
+    for j in 1:2
+        println("    uout (",i,",",j,"): ", uout_residual(p_soln, w_soln,M_soln,q_soln,m0,i,j))
+    end
+end
+
+for j in 1:2
+    println("    dzp (",j,"): ", dzp_residual(q_soln,m0,j))
+    println("    uzp (",j,"): ", uzp_residual(M_soln,q_soln,m0,j))
+end
+
+for j in 1:2
+    println("    labor (",j,"): ", labor_residual(p_soln, w_soln, M_soln, q_soln, m0, j))
+end
+
 
 ##
-
 # Try to just solve for quantities?
+
 function q_residuals!(F,x,p,w,M,m)
 
     q = reshape(x[1:8], (2,2,2))
@@ -309,19 +334,14 @@ function q_residuals!(F,x,p,w,M,m)
 end
 
 function solve_q(m, x_init, p, w, M)
-    return nlsolve((F,x) -> q_residuals!(F,x,p,w,M,m), x_init,
-    show_trace = true, method = :newton, iterations = 1000)
+    return nlsolve((F,x) -> q_residuals!(F,x,p,w,M,m), x_init, #autodiff = :forward,
+    show_trace = true, method = :newton, linesearch = BackTracking(), iterations = 1000)
 end
 
 m0 = OpenAFFGTModel(ces = [1.01, 2.0])
-# x0 = zeros(2,2,2)
-# x0 *= 2
 p0 = ones(2,2,2)
-# p0[1,1,1] = 1.0
-# p0 *= 2.0
 q0 = log.(ones(2,2,2))
 M0 = ones(2,2)
-# M0[1,1,1] = 20.0
 w0 = [1.0, 1.0]
 
 q_soln = solve_q(m0,q0,p0,w0,M0)
@@ -349,8 +369,8 @@ for i in 1:2
 end
 
 ##
-
 # Need to solve small CES system
+
 # Take prices/wages as given (10), solve for quantities and masses (12)
 function qM_residuals!(F,x,p,w,m)
     
@@ -361,6 +381,9 @@ function qM_residuals!(F,x,p,w,m)
     # Guarantee positive
     q = exp.(q) #./(1 .+ exp.(q))*5
     M = exp.(M) #./(1 .+ exp.(M))*5
+
+    # q = 100 .*(tanh.(q) .+ 1)
+    # M = 100 .*(tanh.(M) .+ 1)
 
     # Residual counter
     F_iter = 0
@@ -393,7 +416,6 @@ function qM_residuals!(F,x,p,w,m)
         F[F_iter] = uzp_residual(M,q,m,j)
     end
 
-
     # for i in 1:2
     #     for j in 1:2
     #         F_iter += 1
@@ -403,21 +425,17 @@ function qM_residuals!(F,x,p,w,m)
 end
 
 function solve_qM(m, x_init, p, w)
-    return nlsolve((F,x) -> qM_residuals!(F,x,p,w,m), x_init,
-    show_trace = true, method = :trust_region, iterations = 100, ftol = 1e-15)
+    return nlsolve((F,x) -> qM_residuals!(F,x,p,w,m), x_init, #autodiff = :forward,
+    show_trace = true, method = :trust_region, iterations = 100, ftol = 1e-15) #linesearch = BackTracking()
 end
 
 m0 = OpenAFFGTModel()
 println(m0)
+
 p0 = ones(2,2,2)
-# p0 = rand(2,2,2)
-# p0[1,1,1] = 1.1
 w0 = ones(2)
-# w0 = rand(2)
 x0 = zeros(12)
-# x0 = randn(12)
-# x0 = ones(12)
-# x0 *= 0.001
+
 qM_soln = solve_qM(m0, x0, p0, w0)
 
 q1 = reshape(qM_soln.zero[1:8], (2,2,2))
@@ -426,8 +444,6 @@ M1 = reshape(qM_soln.zero[9:12], (2,2))
 q1 = exp.(q1)
 M1 = exp.(M1)
 
-# q1 = exp.(q1) #./(1 .+ exp.(q1))*5
-# M1 = exp.(M1) #./(1 .+ exp.(M1))*5
 println("qM soln")
 println("    p: ", p0)
 println("    w: ", w0)
