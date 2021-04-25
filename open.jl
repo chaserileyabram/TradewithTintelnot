@@ -285,13 +285,9 @@ function eq_q!(F,x,m,p,w,M)
 end
 
 
-
-# F0 = zeros(21)
-# x0 = zeros(21)
-
 function solve_q(m,p,w,M,x_init)
     return nlsolve((F,x) -> eq_q!(F,x,m,p,w,M), x_init, #autodiff = :forward,
-    show_trace = true, method = :newton, iterations = 1000, xtol=1e-16)
+    show_trace = false, method = :newton, iterations = 100, xtol=1e-16)
 end
 
 
@@ -308,9 +304,6 @@ M0 = ones(2,2)
 soln = solve_q(m0,p0,w0,M0,x0)
 q_soln = reshape(soln.zero[1:8], (2,2,2))
 
-# p0 = transform.(p0)
-# w0 = transform.(w0)
-# M0 = transform.(M0)
 q_soln = transform.(q_soln)
 
 println("soln")
@@ -356,3 +349,91 @@ end
 ##
 
 # Prices 
+
+function eq_p!(F,x,m,w,M)
+    # Rename variables
+    p = reshape(x[1:8], (2,2,2))
+    p = transform.(p)
+
+    q_guess = reshape(ones(8), (2,2,2))
+    q = solve_q(m,p,w,M,q_guess).zero
+
+    F_iter = 0
+
+    for i in 1:2
+        for j in 1:2
+            for s in 1:2
+                F_iter += 1
+                F[F_iter] = prices(m,p,w,M,i,j,s)
+            end
+        end
+    end
+end
+
+
+function solve_p(m,w,M,x_init)
+    return nlsolve((F,x) -> eq_p!(F,x,m,w,M), x_init, #autodiff = :forward,
+    show_trace = true, method = :newton, iterations = 50, xtol=1e-16)
+end
+
+
+F0 = zeros(8)
+x0 = randn(8)
+x0 = ones(8)
+
+m0 = OpenModel()
+w0 = ones(2)
+M0 = ones(2,2)
+
+
+# Solve system
+soln = solve_p(m0,w0,M0,x0)
+p_soln = reshape(soln.zero[1:8], (2,2,2))
+p_soln = transform.(p_soln)
+
+q_guess = reshape(ones(8), (2,2,2))
+q_p_soln = solve_q(m0,p_soln,w0,M0,q_guess).zero
+q_p_soln = transform.(q_p_soln)
+
+
+
+println("soln")
+println("    p: ", p_soln)
+println("    w: ", w0)
+println("    M: ", M0)
+println("    q: ", q_p_soln)
+
+println("all residuals")
+
+for i in 1:2
+    for j in 1:2
+        for s in 1:2
+            println("    demand (",j,",",i,",",s,"): ", demand(m0,p_soln,w0,q_p_soln,M0,j,i,s))
+        end
+    end
+end
+
+println("    ---")
+
+for i in 1:2
+    for j in 1:2
+        for s in 1:2
+            println("    prices (",i,",",j,",",s,"): ", prices(m0,p_soln,w0,M0,i,j,s))
+        end
+    end
+end
+
+println("    ---")
+
+for i in 1:2
+    for s in 1:2
+        println("    free_entry (",i,",",s,"): ", free_entry(m0,q_p_soln,M0,i,s))
+    end
+end
+
+println("    ---")
+
+for i in 1:2
+    println("    lmc (",i,"): ", lmc(m0,p_soln,w0,q_p_soln,M0,i))
+end
+
