@@ -68,18 +68,22 @@ end
 
 # P_ji^s (Price aggregator by export-import-sector)
 function Pjis(m,p,M,j,i,s)
-    return M[j,s]^(1/(1-m.ces[s]))*(1+m.t[j,i,s])*p[j,i,s]
+    # return M[j,s]^(1/(1-m.ces[s]))*(1+m.t[j,i,s])*p[j,i,s]
+    return safe_power(M[j,s], 1/(1-m.ces[s]))*(1+m.t[j,i,s])*p[j,i,s]
 end
 
 #P_i (Price aggregator by import-sector)
 function Pis(m,p,M,i,s)
-    return sum([Pjis(m,p,M,j,i,s)^(1-m.ces[s]) for j in 1:2])^(1/(1-m.ces[s]))
+    # tmp_sum = sum([sign(Pjis(m,p,M,j,i,s))*abs(Pjis(m,p,M,j,i,s))^(1-m.ces[s]) for j in 1:2])
+    # return sign(tmp_sum)*abs(tmp_sum)^(1/(1-m.ces[s]))
+    return abs(safe_power(sum([safe_power(Pjis(m,p,M,j,i,s),(1-m.ces[s])) for j in 1:2]), 1/(1-m.ces[s])))
 end
 
 #mc_i^S (Marginal cost by import-sector)
 function mcis(m,p,w,M,i,s)
     if s == 1
-        return m.alpha_bar/m.A[i,s] * w[i]^m.alpha * Pis(m,p,M,i,s)^(1-m.alpha)
+        # return m.alpha_bar/m.A[i,s] * w[i]^m.alpha * Pis(m,p,M,i,s)^(1-m.alpha)
+        return m.alpha_bar/m.A[i,s] * safe_power(w[i],m.alpha) * safe_power(Pis(m,p,M,i,s),(1-m.alpha))
     else
         return w[i]/m.A[i,s]
     end
@@ -149,8 +153,13 @@ function transform(z)
     return exp(z)
 end
 
+function safe_power(x,p)
+    return sign(x)*abs(x)^p
+end
+
 # Below this line code will still be quite messy
 #######################################################
+##
 # All equations at once
 
 function eq_all!(F,x,m)
@@ -213,14 +222,15 @@ m0 = OpenModel()
 F0 = zeros(22)
 # x0 = zeros(22) #.+ 0.0im
 # x0[1] = 1.0
-x0 = rand(22)
+# x0 = rand(22)
+x0 = ones(22)
 
 # F0 = zeros(21)
 # x0 = zeros(21)
 
 function solve_open(m, x_init)
     return nlsolve((F,x) -> eq_all!(F,x,m), x_init, #autodiff = :forward,
-    show_trace = true, method = :newton, iterations = 100, xtol=1e-16)
+    show_trace = true, method = :trust_region, iterations = 150, xtol=1e-16)
 end
 
 
@@ -236,10 +246,10 @@ q_soln = reshape(soln.zero[15:22], (2,2,2))
 # q_soln = reshape(soln.zero[10:17], (2,2,2))
 # M_soln = reshape(soln.zero[18:21], (2,2))
 
-p_soln = transform.(p_soln)
-w_soln = transform.(w_soln)
-M_soln = transform.(M_soln)
-q_soln = transform.(q_soln)
+# p_soln = transform.(p_soln)
+# w_soln = transform.(w_soln)
+# M_soln = transform.(M_soln)
+# q_soln = transform.(q_soln)
 
 println("soln")
 println("    p: ", p_soln)
@@ -292,7 +302,7 @@ function eq_q!(F,x,m,p,w,M)
     # Rename variables
     q = reshape(x[1:8], (2,2,2))
 
-    q = transform.(q)
+    # q = transform.(q)
 
     F_iter = 0
 
@@ -326,7 +336,7 @@ M0 = ones(2,2)
 soln = solve_q(m0,p0,w0,M0,x0)
 q_soln = reshape(soln.zero[1:8], (2,2,2))
 
-q_soln = transform.(q_soln)
+# q_soln = transform.(q_soln)
 
 println("soln")
 println("    p: ", p0)
@@ -376,7 +386,7 @@ end
 function eq_p!(F,x,m,w,M)
     # Rename variables
     p = reshape(x[1:8], (2,2,2))
-    p = transform.(p)
+    # p = transform.(p)
 
     # q_guess = reshape(ones(8), (2,2,2))
     # q = solve_q(m,p,w,M,q_guess).zero
@@ -412,12 +422,12 @@ M0 = ones(2,2)
 
 # Solve system
 soln = solve_p(m0,w0,M0,x0)
-p_soln = reshape(soln.zero[1:8], (2,2,2))
-p_soln = transform.(p_soln)
+p_soln = abs.(reshape(soln.zero[1:8], (2,2,2)))
+# p_soln = transform.(p_soln)
 
 q_guess = reshape(ones(8), (2,2,2))
-q_soln = solve_q(m0,p_soln,w0,M0,q_guess).zero
-q_soln = transform.(q_soln)
+q_soln = abs.(solve_q(m0,p_soln,w0,M0,q_guess).zero)
+# q_soln = transform.(q_soln)
 
 println("soln")
 println("    p: ", p_soln)
@@ -471,15 +481,15 @@ function eq_M!(F,x,m,w)
     # println("M: ", M)
 
     p_guess = reshape(ones(8),(2,2,2))
-    p = solve_p(m,w,M,p_guess).zero
+    p = abs.(solve_p(m,w,M,p_guess).zero)
     p = reshape(p, (2,2,2))
-    p = transform.(p)
+    # p = transform.(p)
     # println("p: ", p)
 
     q_guess = reshape(ones(8), (2,2,2))
-    q = solve_q(m,p,w,M,q_guess).zero
+    q = abs.(solve_q(m,p,w,M,q_guess).zero)
     q = reshape(q, (2,2,2))
-    q = transform.(q)
+    # q = transform.(q)
     # println("q: ", q)
 
     F_iter = 0
@@ -490,13 +500,12 @@ function eq_M!(F,x,m,w)
             F[F_iter] = goods(m,q,M,i,s)
         end
     end
-
 end
 
 
 function solve_M(m,w,x_init)
     return nlsolve((F,x) -> eq_M!(F,x,m,w), x_init, #autodiff = :forward,
-    show_trace = true, method = :newton, linesearch = StrongWolfe(), iterations = 50, ftol=1e-16)
+    show_trace = false, method = :trust_region, iterations = 50, ftol=1e-16)
 end
 
 
@@ -514,11 +523,11 @@ M_soln = transform.(M_soln)
 
 p_guess = reshape(rand(8), (2,2,2))
 p_soln = solve_p(m0,w0,M_soln,p_guess).zero
-p_soln = transform.(p_soln)
+# p_soln = transform.(p_soln)
 
 q_guess = reshape(rand(8), (2,2,2))
 q_soln = solve_q(m0,p_soln,w0,M_soln,q_guess).zero
-q_soln = transform.(q_soln)
+# q_soln = transform.(q_soln)
 
 println("soln")
 println("    p: ", p_soln)
@@ -689,18 +698,18 @@ function eq_w!(F,x,m)
     M_guess = reshape(ones(4),(2,2))
     M = solve_M(m,w,M_guess).zero
     M = reshape(M, (2,2))
-    M = transform.(M)
+    # M = transform.(M)
 
     p_guess = reshape(ones(8),(2,2,2))
     p = solve_p(m,w,M,p_guess).zero
     p = reshape(p, (2,2,2))
-    p = transform.(p)
+    # p = transform.(p)
     # println("p: ", p)
 
     q_guess = reshape(ones(8), (2,2,2))
     q = solve_q(m,p,w,M,q_guess).zero
     q = reshape(q, (2,2,2))
-    q = transform.(q)
+    # q = transform.(q)
     # println("q: ", q)
 
     F_iter = 0
@@ -729,18 +738,17 @@ soln = solve_w(m0,x0)
 w_soln = soln.zero
 w_soln = transform.(w_soln)
 
-# Solve system
-soln = solve_M(m0,w_soln,x0)
-M_soln = reshape(soln.zero, (2,2))
-M_soln = transform.(M_soln)
+M_guess = reshape(ones(4), (2,2))
+M_soln = solve_M(m0,w_soln,M_guess).zero
+# M_soln = transform.(M_soln)
 
 p_guess = reshape(ones(8), (2,2,2))
 p_soln = solve_p(m0,w_soln,M_soln,p_guess).zero
-p_soln = transform.(p_soln)
+# p_soln = transform.(p_soln)
 
 q_guess = reshape(ones(8), (2,2,2))
 q_soln = solve_q(m0,p_soln,w_soln,M_soln,q_guess).zero
-q_soln = transform.(q_soln)
+# q_soln = transform.(q_soln)
 
 println("soln")
 println("    p: ", p_soln)
