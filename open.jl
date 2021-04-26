@@ -1,7 +1,12 @@
-# AFFGT Take 2
+# "Import Tariffs and Global Sourcing" by Antras, Fadeev, Fort, Gutierrez, and Tintelnot
 
-# Chase Abram
+# Replication by Chase Abram and Ignacia Cuevas
 
+# This code is not yet fully functional.
+
+# 
+
+# Load packages
 using Parameters
 using NLsolve
 using Random
@@ -9,7 +14,7 @@ using Random
 ##
 
 # Stores exogenous parameters
-# In calibrated, we would be updating this object
+# In calibrating, we would be updating this object
 @with_kw mutable struct OpenModel
 
     # sigma and theta
@@ -60,19 +65,18 @@ using Random
     v = zeros(2,2,2) #.+ 0.01
 end
 
-m0 = OpenModel()
 
-# P_ji^s
+# P_ji^s (Price aggregator by export-import-sector)
 function Pjis(m,p,M,j,i,s)
     return M[j,s]^(1/(1-m.ces[s]))*(1+m.t[j,i,s])*p[j,i,s]
 end
 
-#P_i
+#P_i (Price aggregator by import-sector)
 function Pis(m,p,M,i,s)
     return sum([Pjis(m,p,M,j,i,s)^(1-m.ces[s]) for j in 1:2])^(1/(1-m.ces[s]))
 end
 
-#mc_i^S
+#mc_i^S (Marginal cost by import-sector)
 function mcis(m,p,w,M,i,s)
     if s == 1
         return m.alpha_bar/m.A[i,s] * w[i]^m.alpha * Pis(m,p,M,i,s)^(1-m.alpha)
@@ -81,12 +85,12 @@ function mcis(m,p,w,M,i,s)
     end
 end
 
-# y_i^s
+# y_i^s (Output by export-sector)
 function yis(m,i,s)
     return (m.ces[s]-1)*m.f[i,s]
 end
 
-# goods market
+# Goods market eq. residual by import-sector
 function goods(m,q,M,i,s)
     if s == 1
         return yis(m,i,s) - sum(m.tau[i,:,s] .* q[i,:,s])
@@ -95,17 +99,17 @@ function goods(m,q,M,i,s)
     end
 end
 
-# Q_ji^u
+# Q_ji^u (Upstream quantity aggregator by export-import)
 function Qjiu(m,p,w,q,M,j,i)
     return (1-m.alpha)*mcis(m,p,w,M,i,1)*(yis(m,i,1) + m.f[i,1])/(Pis(m,p,M,i,2)^(1-m.ces[2]))*Pjis(m,p,M,j,i,2)^(-m.ces[2])
 end
 
-# T_i
+# T_i (Tax rebates by import)
 function Ti(m,p,q,M,i)
     return sum(m.t[:,i,1].*M[:,1].*p[:,i,1].*q[:,i,1] + m.t[:,i,2].*M[:,2].*M[i,1].*p[:,i,2].*q[:,i,2] - m.v[i,:,1].*M[i,1].*p[i,:,1].*q[i,:,1] - m.v[i,:,2].*M[i,2].*M[:,1].*p[i,:,2].*q[i,:,2])
 end
 
-# Demand equations for each secton
+# Demand eq. residual by export-import-sector
 function demand(m,p,w,q,M,j,i,s)
     if s == 1
         return q[j,i,s] - (w[i]*m.L[i] + Ti(m,p,q,M,i))/(Pis(m,p,M,i,s)^(1-m.ces[s])) * ((1 + m.t[j,i,s])*p[j,i,s])^(-m.ces[s])
@@ -114,12 +118,12 @@ function demand(m,p,w,q,M,j,i,s)
     end
 end
 
-# price conditions
+# Price eq. residual by import-export-sector
 function prices(m,p,w,M,i,j,s)
     return p[i,j,s] - m.mu[s]*m.tau[i,j,s]*mcis(m,p,w,M,i,s)/(1+m.v[i,j,s])
 end
 
-# Labor levels
+# Labor levels by import-sector
 function labor(m,p,w,q,M,i,s)
     if s == 1
         return m.alpha*mcis(m,p,w,M,i,s)*(yis(m,i,s) + m.f[i,s])/w[i]
@@ -128,18 +132,25 @@ function labor(m,p,w,q,M,i,s)
     end
 end
 
-# labor market clearing
+# Labor market clearing eq. residual by import
 function lmc(m,p,w,q,M,i)
     return m.L[i] - M[i,1]*labor(m,p,w,q,M,i,1) - M[i,2]*labor(m,p,w,q,M,i,2)
 end
 
-# used to keep variables positive
+# Used to keep variables positive and/or well behaved
+# This should not be needed
 function transform(z)
+    
+    # x -> infinity => f(x) -> x
+    # x -> -infinity => f(x) -> 0
     # return log(exp(z) + 1)
+    
+    # Smooth and simple
     return exp(z)
 end
 
-##
+# Below this line code will still be quite messy
+#######################################################
 # All equations at once
 
 function eq_all!(F,x,m)
@@ -271,6 +282,7 @@ for i in 1:2
 end
 
 
+#######################################################
 ##
 # One piece at a time
 
@@ -296,8 +308,8 @@ end
 
 
 function solve_q(m,p,w,M,x_init)
-    return nlsolve((F,x) -> eq_q!(F,x,m,p,w,M), x_init, autodiff = :forward,
-    show_trace = false, method = :newton, iterations = 100, ftol=1e-16)
+    return nlsolve((F,x) -> eq_q!(F,x,m,p,w,M), x_init, #autodiff = :forward,
+    show_trace = false, method = :newton, iterations = 500, ftol=1e-16)
 end
 
 
@@ -356,6 +368,7 @@ for i in 1:2
     println("    lmc (",i,"): ", lmc(m0,p0,w0,q_soln,M0,i))
 end
 
+#######################################################
 ##
 
 # Just Prices (and quantities)
@@ -384,7 +397,7 @@ end
 
 function solve_p(m,w,M,x_init)
     return nlsolve((F,x) -> eq_p!(F,x,m,w,M), x_init, #autodiff = :forward,
-    show_trace = false, method = :newton, iterations = 50, ftol=1e-16)
+    show_trace = false, method = :newton, iterations = 500, ftol=1e-16)
 end
 
 
@@ -446,6 +459,7 @@ for i in 1:2
     println("    lmc (",i,"): ", lmc(m0,p_soln,w0,q_soln,M0,i))
 end
 
+#######################################################
 ##
 
 # Try M (does not work)
@@ -453,7 +467,7 @@ end
 function eq_M!(F,x,m,w)
     # Rename variables
     M = reshape(x,(2,2))
-    # M = transform.(M)
+    M = transform.(M)
     # println("M: ", M)
 
     p_guess = reshape(ones(8),(2,2,2))
@@ -465,7 +479,7 @@ function eq_M!(F,x,m,w)
     q_guess = reshape(ones(8), (2,2,2))
     q = solve_q(m,p,w,M,q_guess).zero
     q = reshape(q, (2,2,2))
-    # q = transform.(q)
+    q = transform.(q)
     # println("q: ", q)
 
     F_iter = 0
@@ -482,7 +496,7 @@ end
 
 function solve_M(m,w,x_init)
     return nlsolve((F,x) -> eq_M!(F,x,m,w), x_init, #autodiff = :forward,
-    show_trace = true, method = :newton, iterations = 50, ftol=1e-16)
+    show_trace = true, method = :newton, linesearch = StrongWolfe(), iterations = 50, ftol=1e-16)
 end
 
 
@@ -491,7 +505,7 @@ x0 = ones(4) #.+ 0.0im
 
 m0 = OpenModel()
 w0 = ones(2)
-w0[2] = 1.0
+# w0[2] = 1.0
 
 # Solve system
 soln = solve_M(m0,w0,x0)
@@ -546,7 +560,8 @@ for i in 1:2
     println("    lmc (",i,"): ", lmc(m0,p_soln,w0,q_soln,M_soln,i))
 end
 
-## 
+#######################################################
+##
 
 # M and w?
 
@@ -658,6 +673,8 @@ end
 #     println("    lmc (",i,"): ", lmc(m0,p_soln,w_soln,q_soln,M_soln,i))
 # end
 
+
+#######################################################
 ##
 
 # w
