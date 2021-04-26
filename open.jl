@@ -64,12 +64,12 @@ m0 = OpenModel()
 
 # P_ji^s
 function Pjis(m,p,M,j,i,s)
-    return M[j,s]^(1/(1-m.ces[1]))*(1+m.t[j,i,s])*p[j,i,s]
+    return M[j,s]^(1/(1-m.ces[s]))*(1+m.t[j,i,s])*p[j,i,s]
 end
 
 #P_i
 function Pis(m,p,M,i,s)
-    return sum([Pjis(m,p,M,j,i,s)^(1-m.ces[s]) for j in 1:2])^(1/(1-m.ces[2]))
+    return sum([Pjis(m,p,M,j,i,s)^(1-m.ces[s]) for j in 1:2])^(1/(1-m.ces[s]))
 end
 
 #mc_i^S
@@ -296,7 +296,7 @@ end
 
 
 function solve_q(m,p,w,M,x_init)
-    return nlsolve((F,x) -> eq_q!(F,x,m,p,w,M), x_init, #autodiff = :forward,
+    return nlsolve((F,x) -> eq_q!(F,x,m,p,w,M), x_init, autodiff = :forward,
     show_trace = false, method = :newton, iterations = 100, ftol=1e-16)
 end
 
@@ -453,7 +453,7 @@ end
 function eq_M!(F,x,m,w)
     # Rename variables
     M = reshape(x,(2,2))
-    M = transform.(M)
+    # M = transform.(M)
     # println("M: ", M)
 
     p_guess = reshape(ones(8),(2,2,2))
@@ -465,7 +465,7 @@ function eq_M!(F,x,m,w)
     q_guess = reshape(ones(8), (2,2,2))
     q = solve_q(m,p,w,M,q_guess).zero
     q = reshape(q, (2,2,2))
-    q = transform.(q)
+    # q = transform.(q)
     # println("q: ", q)
 
     F_iter = 0
@@ -487,7 +487,7 @@ end
 
 
 F0 = zeros(4)
-x0 = zeros(4)
+x0 = ones(4) #.+ 0.0im
 
 m0 = OpenModel()
 w0 = ones(2)
