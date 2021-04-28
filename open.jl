@@ -11,6 +11,8 @@ using Parameters
 using NLsolve
 using Random
 
+using ForwardDiff
+
 ##
 
 # Stores exogenous parameters
@@ -789,4 +791,35 @@ println("    ---")
 for i in 1:2
     println("    lmc (",i,"): ", lmc(m0,p_soln,w_soln,q_soln,M_soln,i))
 end
+
+##
+
+# Time to code a solver!
+
+# Newton-Raphson for finding zeros of f
+function newton(f, x0; maxit = 100, ftol = 1e-8)
+    it = 0
+    diff = Inf
+
+    xold = x0
+    xnew = x0
+
+    while it < maxit && diff > ftol
+        println("it: ", it)
+        println("    AD: ", ForwardDiff.jacobian(f,xold))
+        println("    f(x): ", f(xold))
+        xnew = xold - ForwardDiff.jacobian(f, xold) \ f(xold)
+        println("    xnew: ", xnew)
+
+        diff = maximum(abs.(f(xnew) - f(xold)))
+        xold = xnew
+        it += 1
+    end
+
+    return xnew
+end
+
+h(x) = [2*x[1] - x[2] - x[3], (x[2] - x[3])^2, (x[3] - 6)^2] 
+
+newton(h, [0,0,1])
 
