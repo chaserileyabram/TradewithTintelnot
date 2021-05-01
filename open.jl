@@ -825,16 +825,17 @@ function newton(f, x0::AbstractVector{T}; maxit = 1000, ftol = 1e-15, xtol = 1e-
     # weight = 1.0
 
     while it < maxit && (fdev > ftol || xdev > xtol)
-        # println("Newton it: ", it)
+        println("Newton it: ", it)
         # println("    det(AD): ", det(ForwardDiff.jacobian(f,xold)))
         # println("    AD: ", ForwardDiff.jacobian(f,xold))
         # println("    f(x): ", f(xold))
         Jf = ForwardDiff.jacobian(f, xold)
         
-        # if det(Jf) == 0
-        #     println("det(Jf) = 0")
-        #     return xold
-        # end
+        if det(Jf) == 0
+            println("det(Jf) = 0")
+            Jf = Jf .+ 1e-6 .* randn(size(Jf))
+            return xold
+        end
 
         xnew = xold -  Jf \ f(xold)
 
@@ -865,6 +866,7 @@ function newton(f, x0::AbstractVector{T}; maxit = 1000, ftol = 1e-15, xtol = 1e-
 
     if it == maxit
         println("Max Newton iterations reached")
+        println("xnew: ", xnew)
     end
 
     # println("final fdev: ", diff)
@@ -1487,13 +1489,40 @@ function find_w(m)
     return newton(z -> labor_residuals(m,z), w_init)
 end
 
+function solve_open(m)
+    println("Solving for w...")
+    w = find_w(m)
+    M = find_M(m,w)
+    q = find_q(m,w,M)
+    p = zeros(2,2,2)
+    for j in 1:2
+        for i in 1:2
+            for s in 1:2
+                if s == 1
+                    p[i,j,s] = down_pij(m,w,M,i,j)
+                else
+                    p[i,j,s] = up_pij(m, w,i,j)
+                end
+            end
+        end
+    end
+
+    return [p,w,q,M]
+end
+
 
 m0 = OpenModel()
-# m0.tau[1,2,1] = 3.0301
-# m0.tau[2,1,1] = 3.0301
+m0.ces = [4.0, 4.0]
+m0.f = [1.0 1.0; 1.0 1.0]
+m0.alpha = 1 - 0.4517
+m0.L = [0.4531, 9.5469]
+# m0.A = [1.0 1.0; 0.2752 0.1121]
 
-# m0.tau[1,2,2] = 2.6039
-# m0.tau[2,1,2] = 2.6039
+m0.tau[1,2,1] = 3.0066
+m0.tau[2,1,1] = 3.0066
+
+m0.tau[1,2,2] = 2.5971
+m0.tau[2,1,2] = 2.5971
 
 # m0.tau[1,2,1] = 1.001
 # m0.tau[2,1,1] = 1.001
@@ -1501,14 +1530,13 @@ m0 = OpenModel()
 # m0.tau[1,2,2] = 1.001
 # m0.tau[2,1,2] = 1.001
 
+# m0.tau[1,2,1] = 100
+# m0.tau[2,1,1] = 100
 
-m0.tau[1,2,1] = 100
-m0.tau[2,1,1] = 100
+# m0.tau[1,2,2] = 100
+# m0.tau[2,1,2] = 100
 
-m0.tau[1,2,2] = 100
-m0.tau[2,1,2] = 100
-
-m0.L = [0.4531 0.4531]
+# m0.L = [0.4531 0.4531]
 
 
 
@@ -1555,27 +1583,33 @@ m0.L = [0.4531 0.4531]
 # # plot([Ms[k][1,2] for k in 1:n], [labor_residual(m0,w0,Ms[k],1) for k in 1:n])
 # plot([Ms[k][1,2] for k in 1:n], [goods_residual(m0,w0,Ms[k],1,1) for k in 1:n])
 
-println("Solving for w...")
-w_soln = find_w(m0)
-println("Solving for M...")
-M_soln = find_M(m0, w_soln)
-println("Solving for q...")
-q_soln = find_q(m0, w_soln, M_soln)
-println("Solving for p...")
-p_soln = zeros(2,2,2)
-for j in 1:2
-    for i in 1:2
-        for s in 1:2
-            if s == 1
-                p_soln[i,j,s] = up_pij(m0, w_soln,i,j)
-            else
-                p_soln[i,j,s] = down_pij(m0,w_soln,M_soln,i,j)
-            end
-        end
-    end
-end
+# println("Solving for w...")
+# w_soln = find_w(m0)
+# println("Solving for M...")
+# M_soln = find_M(m0, w_soln)
+# println("Solving for q...")
+# q_soln = find_q(m0, w_soln, M_soln)
+# println("Solving for p...")
+# p_soln = zeros(2,2,2)
+# for j in 1:2
+#     for i in 1:2
+#         for s in 1:2
+#             if s == 1
+#                 p_soln[i,j,s] = down_pij(m0,w_soln,M_soln,i,j)
+#             else
+#                 p_soln[i,j,s] = up_pij(m0, w_soln,i,j)
+#             end
+#         end
+#     end
+# end
 
 
+ws = LinRange(-0)
+
+
+
+
+# p_soln, w_soln, q_soln, M_soln = solve_open(m0)
 println("soln")
 println("    p: ", p_soln)
 println("    w: ", w_soln)
@@ -1596,3 +1630,284 @@ for i in 1:2
         println("    goods residual (",i,",",s,"): ", goods_residual(m0,w_soln,M_soln,i,s))
     end
 end
+
+##
+
+# Newton-Raphson for finding zeros of f
+function newton(f, x0::AbstractVector{T}; maxit = 1e5, ftol = 1e-2, xtol = 1e-2) where T
+    it = 0
+    
+    fdev = Inf
+    xdev = Inf
+
+    xold = x0
+    xnew = NaN
+
+    # weight = 0.01
+    weight = 1.0
+
+    while it < maxit && (fdev > ftol || xdev > xtol)
+        if (it % 1000 == 0) && (it > 0)
+            println("Newton it: ", it)
+        end
+        # println("    det(AD): ", det(ForwardDiff.jacobian(f,xold)))
+        # println("    AD: ", ForwardDiff.jacobian(f,xold))
+        # println("    f(x): ", f(xold))
+        Jf = ForwardDiff.jacobian(f, xold)
+        
+        if det(Jf) == 0
+            println("det(Jf) = 0")
+            Jf = Jf .+ 1e-6 .* randn(size(Jf))
+            # return xold
+        end
+
+        xnew = xold -  Jf \ f(xold)
+
+        xnew = (1 - weight) .* xold + weight .* xnew
+
+        # weight = 0.5
+        # weight_it = 0
+        # max_weight_it = 10000
+        # while sum(xnew .< 0) > 0 && weight_it < max_weight_it
+        #     println("weight_it: ", weight_it)
+        #     xnew = weight*xnew + (1-weight)*xold
+        #     weight_it += 1
+        # end
+
+        # if weight_it == max_weight_it
+        #     xnew = 1/2 .* xold
+        #     # println("max_weight_it reached, using xnew = ", xnew)
+        # end
+
+        # xnew = (xnew .>= 0) .* xnew .+ 0.1 .* (xnew .< 0)
+        # println("    xnew: ", xnew)
+
+        fdev = maximum(abs.(f(xnew)))
+        xdev = maximum(abs.(xnew - xold))
+        xold = xnew
+        it += 1
+    end
+
+    if it == maxit
+        println("Max Newton iterations reached")
+        println("xnew: ", xnew)
+    end
+
+    # println("final fdev: ", diff)
+    # println("final eval: ", f(xnew))
+
+    return xnew
+end
+
+h(x) = [2*x[1] - x[2] - x[3], (x[2] - x[3])^2, (x[3] - 6)^2] 
+
+newton(h, [0,0,1])
+
+##
+
+# Avoid nesting
+# Let x = (wages, masses, q_{ij}^d)
+
+# We directly get upstream prices, which give upstream price aggregates, 
+# which then allow downstream prices, which then allow downstream quantities
+
+# We are left not knowing downstream quantities (4), wages (2), and masses(4).
+
+# Use downstream demand (4) and goods market (4), normalize w_H and use LMC_F for w_F.
+
+
+function mcis(m, w, M, i, s)
+    if s == 1
+        return m.alpha_bar/m.A[i,s]*w[i]^m.alpha*Pjs(m,w,M,i,2)^(1-m.alpha)
+    else
+        return w[i]/m.A[i,s]
+    end
+end
+
+function pijs(m, w, M, i, j, s)
+    return m.mu[s]*m.tau[i,j,s]*mcis(m,w,M,i,s)/(1 + m.v[i,j,s])
+end
+
+function Pijs(m, w, M, i, j, s)
+    return M[i,s]^(1/(1-m.ces[s]))*(1 + m.t[i,j,s])*pijs(m,w,M,i,j,s)
+end
+
+function Pjs(m,w,M,j,s)
+    return sum([Pijs(m,w,M,i,j,s)^(1-m.ces[s]) for i in 1:2])^(1/(1-m.ces[s]))
+end
+
+function qjiu(m,w,M,j,i)
+    return (1 - m.alpha)*mcis(m,w,M,i,1)*m.ces[1]*m.f[i,1]/Pjs(m,w,M,i,2) * ((1 + m.t[j,i,2])*pijs(m,w,M,j,i,2)/Pjs(m,w,M,i,2))^(-m.ces[2])
+end
+
+function Ti(m,w,q,M,i)
+    return sum([m.t[j,i,1]*M[j,1]*pijs(m,w,M,j,i,1)*q[j,i] + m.t[j,i,2]*M[j,2]*M[i,1]*pijs(m,w,M,j,i,2)*qjiu(m,w,M,j,i) - m.v[i,j,1]*M[i,1]*pijs(m,w,M,i,j,1)*q[i,j] - m.v[i,j,2]*M[i,2]*M[j,1]*pijs(m,w,M,i,j,2)*qjiu(m,w,M,i,j) for j in 1:2])
+end
+
+function down_demand_residual_ji(m,w,q,M,j,i)
+    return q[j,i] - (w[i]*m.L[i] + Ti(m,w,q,M,i))/Pjs(m,w,M,i,1) * ((1 + m.t[j,i,1])*pijs(m,w,M,j,i,1)/Pjs(m,w,M,i,1))^(-m.ces[1])
+end
+
+function goods_residual_is(m,w,q,M,i,s)
+    if s == 1
+        return (m.ces[s] - 1)*m.f[i,s] - sum([m.tau[i,j,s]*q[i,j] for j in 1:2])
+        # w[i]*m.L[i] + Ti(m,w,q,M,i) - sum([pijs(m,w,M,j,i,s)*(1 + m.t[j,i,1])*q[j,i]*M[j,s] for j in 1:2])
+    else
+        return (m.ces[s] - 1)*m.f[i,s] - sum([M[j,s]*m.tau[i,j,s]*qjiu(m,w,M,i,j) for j in 1:2])
+    end
+end
+
+function labor_residual_i(m,w,M,i)
+    return m.L[i] - M[i,1]*m.alpha*m.alpha_bar/m.A[i,1] *m.ces[1]*m.f[i,1]*(Pjs(m,w,M,i,2)/w[i])^(1-m.alpha) - M[i,2]*m.ces[2]*m.f[i,2]/m.A[i,2]
+end
+
+function wqM_residuals(m,x::AbstractVector{T}) where T
+# function wqM_residuals(m,w,M,q)
+    
+    # y = exp.(x)
+    y = x
+    w = y[1:2]
+    q = reshape(y[3:6], (2,2))
+    M = reshape(y[7:10], (2,2))
+
+    # w = [1.0 y[1]]
+    # q = reshape(y[2:5], (2,2))
+    # M = reshape(y[6:9], (2,2))
+
+    F = ones(T,length(y))
+    # F = ones(10)
+    F_iter = 0
+
+    F_iter += 1
+    F[F_iter] = w[1] - 1.0
+
+    for j in 1:2
+        for i in 1:2
+            F_iter += 1
+            F[F_iter] = down_demand_residual_ji(m,w,q,M,j,i)
+        end
+    end
+
+    for i in 1:2
+        for s in 1:2
+            F_iter += 1
+            F[F_iter] = goods_residual_is(m,w,q,M,i,s)
+        end
+    end
+
+    F_iter += 1
+    F[F_iter] = labor_residual_i(m,w,M,2)
+
+    return F
+end
+
+# function q_residuals(m,w,M,x::AbstractVector{T}) where T
+
+#     q = reshape(x,(2,2))
+#     F = ones(T, 4)
+#     F_iter = 0
+
+#     for j in 1:2
+#         for i in 1:2
+#             F_iter += 1
+#             F[F_iter] = down_demand_residual_ji(m,w,q,M,j,i)
+#         end
+#     end
+
+#     return F
+# end
+
+
+# function find_q(m,w,M)
+#     q_init = ones(4)
+#     newton(z -> q_residuals(m,w,M,z), q_init)
+# end
+
+m0 = OpenModel()
+
+wqM_residuals(m0,ones(10))
+
+# m0.ces = [4.0, 4.0]
+# m0.f = [1.0 1.0; 1.0 1.0]
+# m0.alpha = 1 - 0.4517
+# m0.L = [0.4531, 9.5469]
+# m0.A = [1.0 1.0; 0.2752 0.1121]
+
+# m0.tau[1,2,1] = 3.0066
+# m0.tau[2,1,1] = 3.0066
+
+# m0.tau[1,2,2] = 2.5971
+# m0.tau[2,1,2] = 2.5971
+
+# w0 = ones(2)
+# q0 = ones(2,2)
+# M0 = ones(2,2)
+
+# find_q(m0,w0,M0)
+
+# n = 10
+# ws = LinRange(0.9,1.1,n)
+# Ms = LinRange(0.01,2,n)
+
+# w_curr = ones(2,2)
+# M_curr = ones(2,2)
+# fitness = Inf
+
+# for w2 in ws
+#     println("w2: ", w2)
+#     for Mid in Ms
+#         println("Mid: ", Mid)
+#         for Mjd in Ms
+#             for Miu in Ms
+#                 for Mju in Ms
+#                     w = [1.0 w2]
+#                     M = [Mid Miu; Mjd Mju]
+
+#                     new_fitness = maximum(abs.(wqM_residuals(m0,w,M,reshape(find_q(m0,w,M),(2,2)))))
+
+#                     if new_fitness < fitness
+#                         fitness = new_fitness
+#                         w_curr = w
+#                         M_curr = M
+#                         println("Updated:")
+#                         println("    fitness: ", fitness)
+#                         println("    w: ", w_curr)
+#                         println("    M: ", M_curr)
+#                     end
+#                 end
+#             end
+#         end
+#     end
+# end
+# println("Final:")
+# println("    fitness: ", fitness)
+# println("    w: ", w_curr)
+# println("    M: ", M_curr)
+
+
+
+# wqM_residuals(m0,w0,M0,reshape(find_q(m0,w0,M0),(2,2)))
+
+
+# mcis(m0,w0,M0,1,1)
+# pijs(m0,w0,M0,2,2,2)
+# Pijs(m0,w0,M0,2,2,2)
+# Pjs(m0,w0,M0,2,2)
+# qjiu(m0,w0,M0,2,2)
+# Ti(m0,w0,q0,M0,1)
+# down_demand_residual_ji(m0,w0,q0,M0,2,2)
+# goods_residual_is(m0,w0,q0,M0,1,2)
+# labor_residual_i(m0,w0,M0,2)
+
+# wqM_residuals(m0,ones(10))
+
+# ForwardDiff.jacobian(z -> wqM_residuals(m0,z), zeros(9))
+# ForwardDiff.jacobian(z -> wqM_residuals(m0,z), ones(9))
+
+# x_init = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+# x_init = ones(10)
+
+# soln = newton(z -> wqM_residuals(m0, z), x_init)
+
+# println("soln: ", soln)
+# println("resids: ", wqM_residuals(m0, soln))
