@@ -100,6 +100,11 @@ function Ti(m,w,q,M,i)
     return sum([m.t[j,i,1]*M[j,1]*pijs(m,w,M,j,i,1)*q[j,i] + m.t[j,i,2]*M[j,2]*M[i,1]*pijs(m,w,M,j,i,2)*qjiu(m,w,M,j,i) - m.v[i,j,1]*M[i,1]*pijs(m,w,M,i,j,1)*q[i,j] - m.v[i,j,2]*M[i,2]*M[j,1]*pijs(m,w,M,i,j,2)*qjiu(m,w,M,i,j) for j in 1:2])
 end
 
+# welfare of country i
+function Ui(m,w,q,M,i)
+    return (w[i]*m.L[i] + Ti(m,w,q,M,i))/Pjs(m,w,M,i,1)
+end
+
 # Downstream demand residual export-import
 function down_demand_residual_ji(m,w,q,M,j,i)
     return q[j,i] - (w[i]*m.L[i] + Ti(m,w,q,M,i))/Pjs(m,w,M,i,1) * ((1 + m.t[j,i,1])*pijs(m,w,M,j,i,1)/Pjs(m,w,M,i,1))^(-m.ces[1])
@@ -218,38 +223,43 @@ M_soln = reshape(soln[7:10], (2,2))
 obj_val = objective_value(m)
 
 # See results
-println("----------Simple symmetry----------")
-println("Found:")
-println("    p soln: ", [pijs(m0,w_soln,M_soln,i,j,s) for i in 1:2, j in 1:2, s in 1:2])
-println("    w_soln: ", w_soln)
-println("    q down: ", q_soln)
-println("    q up: ", [qjiu(m0,w_soln,M_soln,j,i) for j in 1:2, i in 1:2])
-println("    M_soln: ", M_soln)
-println("    obj_val: ", obj_val)
-println()
-println("Equilibrium conditions:")
-println("    w_H (1)")
-println("    Downstream demand (4)")
-println("    Goods Mkt (4)")
-println("    Labor Mkt F (1)")
-println()
-println("w_H: ", w_soln[1] - 1.0)
+open("open_out.txt", "w") do io
+    println(io,"----------Simple symmetry----------")
+    println(io, "model: ", m0)
+    println(io,"Found:")
+    println(io,"    p soln: ", [pijs(m0,w_soln,M_soln,i,j,s) for i in 1:2, j in 1:2, s in 1:2])
+    println(io,"    w_soln: ", w_soln)
+    println(io,"    q down: ", q_soln)
+    println(io,"    q up: ", [qjiu(m0,w_soln,M_soln,j,i) for j in 1:2, i in 1:2])
+    println(io,"    M_soln: ", M_soln)
+    println(io,"    obj_val: ", obj_val)
+    println(io,"")
+    println(io,"Equilibrium conditions:")
+    println(io,"    w_H (1)")
+    println(io,"    Downstream demand (4)")
+    println(io,"    Goods Mkt (4)")
+    println(io,"    Labor Mkt F (1)")
+    println(io,"")
 
-for j in 1:2
+    println(io, "Eq. Residuals:")
+    println(io,"w_H: ", w_soln[1] - 1.0)
+
+    for j in 1:2
+        for i in 1:2
+            println(io,"down demand (",j,",",i,"): ", down_demand_residual_ji(m0,w_soln,q_soln,M_soln,j,i))
+        end
+    end
+
     for i in 1:2
-        println("down demand (",j,",",i,"): ", down_demand_residual_ji(m0,w_soln,q_soln,M_soln,j,i))
+        for s in 1:2
+            println(io,"goods (",i,",",s,"): ", goods_residual_is(m0,w_soln, q_soln, M_soln, i, s))
+        end
     end
-end
 
-for i in 1:2
-    for s in 1:2
-        println("goods (",i,",",s,"): ", goods_residual_is(m0,w_soln, q_soln, M_soln, i, s))
-    end
+    println(io,"LMC_F: ", labor_residual_i(m0, w_soln, M_soln,2))
+    println(io,"")
+    println(io,"Verification via LMC_H: ", labor_residual_i(m0,w_soln,M_soln,1))
 end
-
-println("LMC_F: ", labor_residual_i(m0, w_soln, M_soln,2))
-println()
-println("Verification via LMC_H: ", labor_residual_i(m0,w_soln,M_soln,1))
 
 #################################################################
 ##
@@ -294,38 +304,43 @@ M_soln = reshape(soln[7:10], (2,2))
 obj_val = objective_value(m)
 
 # See results
-println("----------Symmetric Autarky----------")
-println("Found:")
-println("    p soln: ", [pijs(m0,w_soln,M_soln,i,j,s) for i in 1:2, j in 1:2, s in 1:2])
-println("    w_soln: ", w_soln)
-println("    q down: ", q_soln)
-println("    q up: ", [qjiu(m0,w_soln,M_soln,j,i) for j in 1:2, i in 1:2])
-println("    M_soln: ", M_soln)
-println("    obj_val: ", obj_val)
-println()
-println("Equilibrium conditions:")
-println("    w_H (1)")
-println("    Downstream demand (4)")
-println("    Goods Mkt (4)")
-println("    Labor Mkt F (1)")
-println()
-println("w_H: ", w_soln[1] - 1.0)
+open("open_out.txt", "a") do io
+    println(io,"----------Symmetric near-autarky----------")
+    println(io, "model: ", m0)
+    println(io,"Found:")
+    println(io,"    p soln: ", [pijs(m0,w_soln,M_soln,i,j,s) for i in 1:2, j in 1:2, s in 1:2])
+    println(io,"    w_soln: ", w_soln)
+    println(io,"    q down: ", q_soln)
+    println(io,"    q up: ", [qjiu(m0,w_soln,M_soln,j,i) for j in 1:2, i in 1:2])
+    println(io,"    M_soln: ", M_soln)
+    println(io,"    obj_val: ", obj_val)
+    println(io,"")
+    println(io,"Equilibrium conditions:")
+    println(io,"    w_H (1)")
+    println(io,"    Downstream demand (4)")
+    println(io,"    Goods Mkt (4)")
+    println(io,"    Labor Mkt F (1)")
+    println(io,"")
 
-for j in 1:2
+    println(io, "Eq. Residuals:")
+    println(io,"w_H: ", w_soln[1] - 1.0)
+
+    for j in 1:2
+        for i in 1:2
+            println(io,"down demand (",j,",",i,"): ", down_demand_residual_ji(m0,w_soln,q_soln,M_soln,j,i))
+        end
+    end
+
     for i in 1:2
-        println("down demand (",j,",",i,"): ", down_demand_residual_ji(m0,w_soln,q_soln,M_soln,j,i))
+        for s in 1:2
+            println(io,"goods (",i,",",s,"): ", goods_residual_is(m0,w_soln, q_soln, M_soln, i, s))
+        end
     end
-end
 
-for i in 1:2
-    for s in 1:2
-        println("goods (",i,",",s,"): ", goods_residual_is(m0,w_soln, q_soln, M_soln, i, s))
-    end
+    println(io,"LMC_F: ", labor_residual_i(m0, w_soln, M_soln,2))
+    println(io,"")
+    println(io,"Verification via LMC_H: ", labor_residual_i(m0,w_soln,M_soln,1))
 end
-
-println("LMC_F: ", labor_residual_i(m0, w_soln, M_soln,2))
-println()
-println("Verification via LMC_H: ", labor_residual_i(m0,w_soln,M_soln,1))
 
 #################################################################
 ##
@@ -366,36 +381,41 @@ M_soln = reshape(soln[7:10], (2,2))
 obj_val = objective_value(m)
 
 # See results
-println("----------Calibration----------")
-println("Found:")
-println("    p soln: ", [pijs(m0,w_soln,M_soln,i,j,s) for i in 1:2, j in 1:2, s in 1:2])
-println("    w_soln: ", w_soln)
-println("    q down: ", q_soln)
-println("    q up: ", [qjiu(m0,w_soln,M_soln,j,i) for j in 1:2, i in 1:2])
-println("    M_soln: ", M_soln)
-println("    obj_val: ", obj_val)
-println()
-println("Equilibrium conditions:")
-println("    w_H (1)")
-println("    Downstream demand (4)")
-println("    Goods Mkt (4)")
-println("    Labor Mkt F (1)")
-println()
-println("w_H: ", w_soln[1] - 1.0)
+open("open_out.txt", "a") do io
+    println(io,"----------Paper parameters----------")
+    println(io, "model: ", m0)
+    println(io,"Found:")
+    println(io,"    p soln: ", [pijs(m0,w_soln,M_soln,i,j,s) for i in 1:2, j in 1:2, s in 1:2])
+    println(io,"    w_soln: ", w_soln)
+    println(io,"    q down: ", q_soln)
+    println(io,"    q up: ", [qjiu(m0,w_soln,M_soln,j,i) for j in 1:2, i in 1:2])
+    println(io,"    M_soln: ", M_soln)
+    println(io,"    obj_val: ", obj_val)
+    println(io,"")
+    println(io,"Equilibrium conditions:")
+    println(io,"    w_H (1)")
+    println(io,"    Downstream demand (4)")
+    println(io,"    Goods Mkt (4)")
+    println(io,"    Labor Mkt F (1)")
+    println(io,"")
 
-for j in 1:2
+    println(io, "Eq. Residuals:")
+    println(io,"w_H: ", w_soln[1] - 1.0)
+
+    for j in 1:2
+        for i in 1:2
+            println(io,"down demand (",j,",",i,"): ", down_demand_residual_ji(m0,w_soln,q_soln,M_soln,j,i))
+        end
+    end
+
     for i in 1:2
-        println("down demand (",j,",",i,"): ", down_demand_residual_ji(m0,w_soln,q_soln,M_soln,j,i))
+        for s in 1:2
+            println(io,"goods (",i,",",s,"): ", goods_residual_is(m0,w_soln, q_soln, M_soln, i, s))
+        end
     end
-end
 
-for i in 1:2
-    for s in 1:2
-        println("goods (",i,",",s,"): ", goods_residual_is(m0,w_soln, q_soln, M_soln, i, s))
-    end
+    println(io,"LMC_F: ", labor_residual_i(m0, w_soln, M_soln,2))
+    println(io,"")
+    println(io,"Verification via LMC_H: ", labor_residual_i(m0,w_soln,M_soln,1))
 end
-
-println("LMC_F: ", labor_residual_i(m0, w_soln, M_soln,2))
-println()
-println("Verification via LMC_H: ", labor_residual_i(m0,w_soln,M_soln,1))
 
