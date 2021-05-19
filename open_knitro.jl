@@ -1,8 +1,12 @@
 # Chase Abram
 
+# Replication of "Import Tariffs and Global Sourcing"
+# by Antras, Fadeev, Fort, Gutierrez, and Tintelnot
+
+# This file sets up functions needed to solve the model
+
 # For solving open economy via JuMP
 # Currently only Ipopt is used, not KNITRO
-
 
 using JuMP #, KNITRO
 using Parameters
@@ -14,6 +18,7 @@ using Ipopt
 # Stores exogenous parameters
 # In calibrating, we would be updating this object
 @with_kw mutable struct OpenModel
+    # Defaults are parameters from paper
 
     # sigma and theta
     ces = [4.0, 4.0]
@@ -35,7 +40,6 @@ using Ipopt
     # Scaled RoW population
     # Lrow = 9.5469
     L = [0.4531 9.5469]
-    # L = [1.0 1.0]
 
     # # Estimated Values
     # # Production, final, RoW relative to US
@@ -43,20 +47,14 @@ using Ipopt
     # # Productivity, input, RoW relative to US
     # Aurow = 0.1121
     A = [1.0 1.0; 0.2752 0.1121]
-    # A = ones(2,2)
 
     # # Icberg cost, final, from US to RoW
     # taud = 3.0301
     # # Iceberg cost, input, from US to RoW
     # tauu = 2.6039
-    # tau = ones(2,2,2)
-    # tau[1,2,1] = 3.0301
-    # tau[2,1,1] = 3.0301
-    
-    # tau[1,2,2] = 2.6039
-    # tau[2,1,2] = 2.6039
     tau = cat([1 3.0301; 3.0301 1], [1 2.6039; 2.6039 1], dims = 3)
 
+    # Want these mutable so we can vary them during calibration
     # Tariffs
     t = zeros(2,2,2)
 
@@ -110,11 +108,10 @@ function down_demand_residual_ji(m,w,q,M,j,i)
     return q[j,i] - (w[i]*m.L[i] + Ti(m,w,q,M,i))/Pjs(m,w,M,i,1) * ((1 + m.t[j,i,1])*pijs(m,w,M,j,i,1)/Pjs(m,w,M,i,1))^(-m.ces[1])
 end
 
-# Goods mkt residual country-sector
+# Goods market residual country-sector
 function goods_residual_is(m,w,q,M,i,s)
     if s == 1
         return (m.ces[s] - 1)*m.f[i,s] - sum([m.tau[i,j,s]*q[i,j] for j in 1:2])
-        # w[i]*m.L[i] + Ti(m,w,q,M,i) - sum([pijs(m,w,M,j,i,s)*(1 + m.t[j,i,1])*q[j,i]*M[j,s] for j in 1:2])
     else
         return (m.ces[s] - 1)*m.f[i,s] - sum([M[j,1]*m.tau[i,j,s]*qjiu(m,w,M,i,j) for j in 1:2])
     end
@@ -127,25 +124,17 @@ end
 
 # All residuals for wage-quantity-mass system
 function wqM_residuals(m,x::AbstractVector{T}) where T
-# function wqM_residuals(m,w,M,q)
     
     # Adjust to avoid solver issues
-    # y = x
     y = x.^2
-    # y = exp.(x)
 
     # Rename for ease
     w = y[1:2]
     q = reshape(y[3:6], (2,2))
     M = reshape(y[7:10], (2,2))
 
-    # w = [1.0 y[1]]
-    # q = reshape(y[2:5], (2,2))
-    # M = reshape(y[6:9], (2,2))
-
     # Initialize errors
     F = ones(T,length(y))
-    # F = ones(10)
     F_iter = 0
 
     # Wage normalization (home)
@@ -160,7 +149,7 @@ function wqM_residuals(m,x::AbstractVector{T}) where T
         end
     end
 
-    # Goods mkt residuals
+    # Goods market residuals
     for i in 1:2
         for s in 1:2
             F_iter += 1
@@ -176,9 +165,6 @@ function wqM_residuals(m,x::AbstractVector{T}) where T
     return sum(F.^2)
 end
 
-# For testing
-# m0 = OpenModel()
-# wqM_residuals(m0, ones(10))
 
 #################################################################
 ##
@@ -212,7 +198,6 @@ register(m, :res, 10, res, autodiff = true) # (4)
 
 # Solve
 optimize!(m)
-# (value.(x), objective_value(m), termination_status(m)) # (5)
 
 # Get solution
 soln = value.(x).^2
@@ -263,7 +248,7 @@ end
 
 #################################################################
 ##
-# Symmetric Autarky
+# Symmetric Near-Autarky (Should approximately match closed-form solution in each country)
 
 # Initialize OpenModel
 m0 = OpenModel(
@@ -293,7 +278,6 @@ register(m, :res, 10, res, autodiff = true) # (4)
 
 # Solve
 optimize!(m)
-# (value.(x), objective_value(m), termination_status(m)) # (5)
 
 # Get solution
 soln = value.(x).^2
@@ -370,7 +354,6 @@ register(m, :res, 10, res, autodiff = true) # (4)
 
 # Solve
 optimize!(m)
-# (value.(x), objective_value(m), termination_status(m)) # (5)
 
 # Get solution
 soln = value.(x).^2
