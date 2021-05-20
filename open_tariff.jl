@@ -20,110 +20,11 @@ using .Threads
 
 using Plots
 ##
-include("open_knitro.jl")
+include("open_solve.jl")
 ##
 
-function opt_tariff(m)
-
-    # welfare implied by tariffs
-    function fitness(ts::AbstractVector{T}) where T
-
-        # Set tariffs
-        m.t[2,1,1] = ts[1]
-        m.t[2,1,2] = ts[2]
-
-        # fit_U = zeros(T,1)
-        # fit_U[1] = -sum((ts .- 1).^2)
-
-        # return fit_U[1]
-
-        # Residuals
-        res(z1, z2, z3, z4, z5, z6, z7, z8, z9, z10) = wqM_residuals(m,[z1, z2, z3, z4, z5, z6, z7, z8, z9, z10])
-
-        # For Ipopt
-        mi = Model(with_optimizer(Ipopt.Optimizer, tol = 1e-20))
-
-        # Setup variables
-        iinit_value = ones(T,10)
-        # @variable(mi, x[i=1:10] >= 0, start = iinit_value[i])
-        @variable(mi, x[i=1:10] >= 0, start = iinit_value[i])
-
-        # Register residuals with model
-        register(mi, :res, 10, res, autodiff = true) # (4)
-
-        # Set objective
-        @NLobjective(mi, Min, res(x[1], x[2], x[3], x[4], x[5], x[6], x[7],x[8],x[9], x[10]))
-
-        # Solve (silently)
-        set_optimizer_attribute(mi, "print_level", 0)
-        optimize!(mi)
-        # (value.(x), objective_value(m), termination_status(m)) # (5)
-
-        # Get solution
-        soln = value.(x).^2
-        w_soln = soln[1:2]
-        q_soln = reshape(soln[3:6], (2,2))
-        M_soln = reshape(soln[7:10], (2,2))
-
-        # See tariff while searching
-        println("    ts: ", ts)
-        println("    U1: ", Ui(m, w_soln, q_soln, M_soln, 1))
-        println("    U2: ", Ui(m, w_soln, q_soln, M_soln, 2))
-
-        # Find (negative) utility
-        # home_U = zeros(Real,1)
-        # home_U[1] = Ui(m, w_soln, q_soln, M_soln, 1)
-
-        # Home welfare (negative for minimization)
-        return -Ui(m, w_soln, q_soln, M_soln, 1)
-    end
-
-    # # Residuals
-    # fit(z1, z2) = fitness([z1, z2])
-
-    # # fit(z1, z2) = (1 - z1)^2 + (1 - z2)^2
-
-    # # For Ipopt
-    # mo = Model(with_optimizer(Ipopt.Optimizer))
-
-    # # Setup variables
-    # oinit_value = zeros(Real,2)
-    # @variable(mo, x[i=1:2], start = oinit_value[i])
-
-    # # Register residuals with model
-    # register(mo, :fit, 2, fit, autodiff = true) # (4)
-
-    # # Set objective
-    # @NLobjective(mo, Max, fit(x[1], x[2]))
-
-    # # Solve (silently)
-    # # set_optimizer_attribute(mo, "print_level", 0)
-    # optimize!(mo)
-
-    # return value.(x)
-
-    # n = 10
-
-    # ws = zeros(n,n)
-    # ts = LinRange(0,1,n)
-
-    # Threads.@threads for i in 1:n
-    #     for j in 1:n
-    #         ws[i,j] = fitness([ts[i], ts[j]])
-    #     end
-    # end
-
-    # p = plot(ts,ts,ws)
-    # display(p)
-
-    # Find max (min of negative)
-    op = optimize(fitness, [0.0, 0.0], Optim.Options(show_trace = true), autodiff = :forward)
-
-    # Implied argmin
-    return Optim.minimizer(op) # value.(x)
-end
-
-# optimal tariffs by country i. full set of policies available?
+# optimal tariffs by country i 
+# full = true if full policy set is available, false if just tariffs
 function opt_tariff(m, i; full = false, out_maxit = 50)
 
     # welfare implied by tariffs
@@ -151,39 +52,16 @@ function opt_tariff(m, i; full = false, out_maxit = 50)
             end
         end
 
-        # Residuals
-        res(z1, z2, z3, z4, z5, z6, z7, z8, z9, z10) = wqM_residuals(m,[z1, z2, z3, z4, z5, z6, z7, z8, z9, z10])
-
-        # For Ipopt
-        mi = Model(with_optimizer(Ipopt.Optimizer, tol = 1e-20))
-
-        # Setup variables
-        init_value = ones(T,10)
-        @variable(mi, x[i=1:10] >= 0, start = init_value[i])
-
-        # Register residuals with model
-        register(mi, :res, 10, res, autodiff = true) # (4)
-
-        # Set objective
-        @NLobjective(mi, Min, res(x[1], x[2], x[3], x[4], x[5], x[6], x[7],x[8],x[9], x[10]))
-
-        # Solve (silently)
-        set_optimizer_attribute(mi, "print_level", 0)
-        optimize!(mi)
-
-        # Get solution
-        soln = value.(x).^2
-        w_soln = soln[1:2]
-        q_soln = reshape(soln[3:6], (2,2))
-        M_soln = reshape(soln[7:10], (2,2))
+        # Solve model
+        solve(m)
 
         # See tariff and utilities while searching
         println("    ts(",i,"): ", ts)
-        println("    U1: ", Ui(m, w_soln, q_soln, M_soln, 1))
-        println("    U2: ", Ui(m, w_soln, q_soln, M_soln, 2))
+        println("    U1: ", Ui(m, m.w, m.q, m.M, 1))
+        println("    U2: ", Ui(m, m.w, m.q, m.M, 2))
 
         # Welfare (negative for minimization)
-        return -Ui(m, w_soln, q_soln, M_soln, i)
+        return -Ui(m, m.w, m.q, m.M, i)
     end
 
     # Find max (min of negative)
@@ -205,14 +83,96 @@ function opt_tariff(m, i; full = false, out_maxit = 50)
     return Optim.minimizer(op)
 end
 
+# optimal tit-for-tat by country i
+function opt_tft(m, i; full = false, out_maxit = 50)
+
+    # welfare implied by tariffs
+    function fitness(ts::AbstractVector{T}) where T
+
+        # i's instruments
+        if i == 1
+            # Set tariffs
+            m.t[2,1,1] = ts[1]
+            m.t[2,1,2] = ts[2]
+
+            # Implied response
+            m.t[1,2,1] = ts[1]
+            m.t[1,2,2] = ts[2]
+
+            if full
+                # subsidy
+                m.t[1,1,2] = ts[3]
+                m.v[1,2,1] = ts[4]
+
+                # Implied response
+                m.t[2,2,2] = ts[3]
+                m.v[2,1,1] = ts[4]
+            end
+        else
+            m.t[1,2,1] = ts[1]
+            m.t[1,2,2] = ts[2]
+
+            # Implied response
+            m.t[2,1,1] = ts[1]
+            m.t[2,1,2] = ts[2]
+
+            if full
+                # subsidy
+                m.t[2,2,2] = ts[3]
+                m.v[2,1,1] = ts[4]
+
+                # Implied response
+                m.t[1,1,2] = ts[3]
+                m.v[1,2,1] = ts[4]
+            end
+        end
+
+        # Solve model
+        solve(m)
+
+        # See tariff and utilities while searching
+        println("    ts(",i,"): ", ts)
+        println("    U1: ", Ui(m, m.w, m.q, m.M, 1))
+        println("    U2: ", Ui(m, m.w, m.q, m.M, 2))
+
+        # Welfare (negative for minimization)
+        return -Ui(m, m.w, m.q, m.M, i)
+    end
+
+    # Find max (min of negative)
+    if i == 1
+        if full
+            op = optimize(fitness, [m.t[2,1,1], m.t[2,1,2], m.t[1,1,2], m.t[1,2,1]], Optim.Options(show_trace = true, iterations = out_maxit), autodiff = :forward)
+        else
+            op = optimize(fitness, [m.t[2,1,1], m.t[2,1,2]], Optim.Options(show_trace = true, iterations = out_maxit), autodiff = :forward)
+        end
+    else
+        if full
+            op = optimize(fitness, [m.t[1,2,1], m.t[1,2,2], m.t[2,2,2], m.t[1,2,1]], Optim.Options(show_trace = true, iterations = out_maxit), autodiff = :forward)
+        else
+            op = optimize(fitness, [m.t[1,2,1], m.t[1,2,2]], Optim.Options(show_trace = true, iterations = out_maxit), autodiff = :forward)
+        end
+    end
+
+    # Implied argmin
+    return Optim.minimizer(op)
+end
+
+
+
 # Solve Nash equilibrium of tariff war
-function tariff_war(m; full = false, maxit = 20, tol = 1e-6, br_maxit = 50)
+function tariff_war(m; full = false, maxit = 50, tol = 1e-6, br_maxit = 20)
+    
+    # Initialize
     it = 0
     diff = Inf
     old_t = zeros(size(m.t))
     old_v = zeros(size(m.v))
 
+    # Continue until found or max iterations
     while it < maxit && diff > tol
+        
+        # Progress report
         println()
         println()
         println("tariff BR iteration: ", it, ", diff: ", diff)
@@ -221,10 +181,15 @@ function tariff_war(m; full = false, maxit = 20, tol = 1e-6, br_maxit = 50)
         println()
         println()
 
+        # Save old
         old_t .= m.t
         old_v .= m.v
+
+        # Find optimal tariff
+        # Alternate on who gets to respond
         opt_tariff(m,1 + (it % 2); full = full, out_maxit = br_maxit)
 
+        # Find difference
         if full
             diff = max(maximum(abs.(m.t - old_t)), maximum(abs.(m.v - old_v)))
         else
@@ -235,15 +200,24 @@ function tariff_war(m; full = false, maxit = 20, tol = 1e-6, br_maxit = 50)
     end
 end
 
+###################
+# Test Kitchen
 
 ##
 # Optimal Tariffs
-m0 = OpenModel()
-opt_tariff(m0, 2; full=true)
+m0 = OpenModel(ces = [7.0, 4.0])
+opt_tariff(m0, 1; full = true, out_maxit = 100)
 
 ##
 m1 = OpenModel()
-tariff_war(m1; br_maxit = 20)
+m1.t = cat([0.0 0.39631484140672424; 0.41149732928496124 0.0],
+[0.0 0.2160215159373675; 0.2230487883892319 0.0], dims = 3)
+tariff_war(m1; maxit = 50, br_maxit = 20)
+
+##
+m2 = OpenModel()
+opt_tft(m2,1)
+
 
 
 
