@@ -13,6 +13,8 @@ using Parameters
 using ForwardDiff
 using Ipopt
 
+using Random, Distributions
+Random.seed!(1234)
 ##
 
 # Stores exogenous parameters
@@ -69,6 +71,13 @@ using Ipopt
 
     # Masses
     M = ones(2,2)
+
+    # Random perturbation
+    d_seed = 1234
+    # Random.seed!(d_seed)
+    d_mean = 1.0
+    d_var = 0.1
+    d = Normal(d_mean, d_var)
 end
 
 ##
@@ -175,7 +184,7 @@ function wqM_residuals(m,x::AbstractVector{T}) where T
 end
 
 
-function solve(m)
+function solve(m; solve_tol = 1e-16)
     # Residuals
     res(z1, z2, z3, z4, z5, z6, z7, z8, z9, z10) = wqM_residuals(m,[z1, z2, z3, z4, z5, z6, z7, z8, z9, z10])
 
@@ -183,11 +192,11 @@ function solve(m)
     # m = Model(with_optimizer(KNITRO.Optimizer)) # (1)
 
     # For Ipopt
-    mi = Model(with_optimizer(Ipopt.Optimizer, tol = 1e-20))
+    mi = Model(with_optimizer(Ipopt.Optimizer, tol = solve_tol))
 
     # Setup variables
-    # init_value = ones(10)
-    init_value = [m.w[1], m.w[2], m.q[1,1], m.q[2,1], m.q[1,2], m.q[2,2], m.M[1,1], m.M[2,1], m.M[1,2], m.M[2,2]]
+    # Perturb each solve from previous solution (not implemented)
+    init_value = ones(10) #rand(m.d, 10) .* [m.w[1], m.w[2], m.q[1,1], m.q[2,1], m.q[1,2], m.q[2,2], m.M[1,1], m.M[2,1], m.M[1,2], m.M[2,2]]
     @variable(mi, x[i=1:10] >= 0, start = init_value[i])
 
     # Register residuals with model

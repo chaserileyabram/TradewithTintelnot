@@ -28,7 +28,7 @@ include("open_solve.jl")
 function opt_tariff(m, i; full = false, out_maxit = 50)
 
     # welfare implied by tariffs
-    function fitness(ts::AbstractVector{T}) where T
+    function fitness(ts::AbstractArray{T}) where T
 
         # i's instruments
         if i == 1
@@ -84,10 +84,10 @@ function opt_tariff(m, i; full = false, out_maxit = 50)
 end
 
 # optimal tit-for-tat by country i
-function opt_tft(m, i; full = false, out_maxit = 50)
+function opt_tft(m, i; full = false, sign_free = false, out_maxit = 50)
 
     # welfare implied by tariffs
-    function fitness(ts::AbstractVector{T}) where T
+    function fitness(ts::AbstractArray{T}) where T
 
         # i's instruments
         if i == 1
@@ -96,8 +96,8 @@ function opt_tft(m, i; full = false, out_maxit = 50)
             m.t[2,1,2] = ts[2]
 
             # Implied response
-            m.t[1,2,1] = ts[1]
-            m.t[1,2,2] = ts[2]
+            m.t[1,2,1] = ts[1]*(sign_free || ts[1] > 0)
+            m.t[1,2,2] = ts[2]*(sign_free || ts[2] > 0)
 
             if full
                 # subsidy
@@ -105,16 +105,16 @@ function opt_tft(m, i; full = false, out_maxit = 50)
                 m.v[1,2,1] = ts[4]
 
                 # Implied response
-                m.t[2,2,2] = ts[3]
-                m.v[2,1,1] = ts[4]
+                m.t[2,2,2] = ts[3]*(sign_free || ts[3] > 0)
+                m.v[2,1,1] = ts[4]*(sign_free || ts[4] > 0)
             end
         else
             m.t[1,2,1] = ts[1]
             m.t[1,2,2] = ts[2]
 
             # Implied response
-            m.t[2,1,1] = ts[1]
-            m.t[2,1,2] = ts[2]
+            m.t[2,1,1] = ts[1]*(sign_free || ts[1] > 0)
+            m.t[2,1,2] = ts[2]*(sign_free || ts[2] > 0)
 
             if full
                 # subsidy
@@ -122,8 +122,8 @@ function opt_tft(m, i; full = false, out_maxit = 50)
                 m.v[2,1,1] = ts[4]
 
                 # Implied response
-                m.t[1,1,2] = ts[3]
-                m.v[1,2,1] = ts[4]
+                m.t[1,1,2] = ts[3]*(sign_free || ts[3] > 0)
+                m.v[1,2,1] = ts[4]*(sign_free || ts[4] > 0)
             end
         end
 
@@ -205,18 +205,33 @@ end
 
 ##
 # Optimal Tariffs
-m0 = OpenModel(ces = [7.0, 4.0])
+m0 = OpenModel()
+m0.t[2,1,1] = 0.3367
+m0.t[2,1,2] = 0.0042
+m0.t[1,1,2] = -0.2503
+m0.t[1,2,1] = 0
+
 opt_tariff(m0, 1; full = true, out_maxit = 100)
 
 ##
 m1 = OpenModel()
-m1.t = cat([0.0 0.39631484140672424; 0.41149732928496124 0.0],
-[0.0 0.2160215159373675; 0.2230487883892319 0.0], dims = 3)
-tariff_war(m1; maxit = 50, br_maxit = 20)
+m1.t = cat([0.0 -0.0164; -0.0164 0.0],
+[0.0 -0.0369; -0.0369 0.0], dims = 3)
+
+# t: [0.0 0.4234496850683404; 0.4033655168665675 0.0]
+# [0.0 0.21663019701200464; 0.2330229436949401 0.0]
+
+# t: [0.0 0.3809213630851428; 0.4093488505726487 0.0]
+# [0.0 0.2088526371258131; 0.2167597658364414 0.0]
+
+# t: [0.0 0.41437654030161186; 0.40765005283206407 0.0]
+# [0.0 0.21131490164370634; 0.2258989446677808 0.0]
+
+tariff_war(m1; maxit = 20, br_maxit = 5)
 
 ##
 m2 = OpenModel()
-opt_tft(m2,1)
+opt_tft(m2,1;sign_free=false, out_maxit = 100)
 
 
 
